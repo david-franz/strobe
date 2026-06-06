@@ -28,6 +28,54 @@ fn db_to_lin(db: f32) -> f32 {
     10f32.powf(db / 20.0)
 }
 
+/// Sliding-window maximum of the input peak across the look-ahead window (a monotonic
+/// deque — O(1) amortized, allocation-free). The limiter needs its gain target to track the
+/// loudest sample anywhere in the delay, not just the newest one, so the reduction is fully
+/// ramped in by the time that sample reaches the output. Without this the gain target only
+/// "sees" a transient for a single sample and releases before the peak exits the delay.
+struct PeakWindow {
+    val: Vec<f32>,
+    idx: Vec<u64>,
+    head: usize,
+    len: usize,
+    cap: usize,
+    window: u64,
+    n: u64,
+}
+
+impl PeakWindow {
+    fn new(window: usize) -> Self {
+        let cap = window + 1;
+        Self { val: vec![0.0; cap], idx: vec![0; cap], head: 0, len: 0, cap, window: window as u64, n: 0 }
+    }
+
+    /// Push the newest peak; return the maximum over the trailing look-ahead window.
+    #[inline]
+    fn push(&mut self, v: f32) -> f32 {
+        let i = self.n;
+        self.n += 1;
+        // Drop front candidates that have fallen outside the window.
+        while self.len > 0 && self.idx[self.head] + self.window < i {
+            self.head = (self.head + 1) % self.cap;
+            self.len -= 1;
+        }
+        // Drop tail candidates this sample dominates (they can never be the max again).
+        while self.len > 0 {
+            let back = (self.head + self.len - 1) % self.cap;
+            if self.val[back] <= v {
+                self.len -= 1;
+            } else {
+                break;
+            }
+        }
+        let slot = (self.head + self.len) % self.cap;
+        self.val[slot] = v;
+        self.idx[slot] = i;
+        self.len += 1;
+        self.val[self.head]
+    }
+}
+
 /// The master bus: gain → DC high-pass → look-ahead limiter → safety ceiling.
 pub struct MasterBus {
     master_gain: f32,
@@ -42,6 +90,7 @@ pub struct MasterBus {
     didx: usize,
     lookahead: usize,
     gain: f32, // current limiter gain (stereo-linked)
+    peak: PeakWindow, // windowed peak detector over the look-ahead window
     sr: f32,
 }
 
@@ -73,6 +122,7 @@ impl MasterBus {
             didx: 0,
             lookahead,
             gain: 1.0,
+            peak: PeakWindow::new(lookahead),
             sr,
         }
     }
@@ -112,8 +162,9 @@ impl MasterBus {
             self.delay_r[self.didx] = xr;
             self.didx = (self.didx + 1) % self.lookahead;
 
-            // target gain from the incoming (future) peak; attack fast, release slow.
-            let peak = xl.abs().max(xr.abs());
+            // Target gain from the loudest sample still in the look-ahead window (so the
+            // reduction is in place before that sample exits the delay); attack fast, release slow.
+            let peak = self.peak.push(xl.abs().max(xr.abs()));
             let target = if peak > self.ceiling { self.ceiling / peak } else { 1.0 };
             let coef = if target < self.gain { self.attack_coef } else { self.release_coef };
             self.gain += coef * (target - self.gain);
@@ -141,6 +192,29 @@ mod tests {
         bus.process(&mut l, &mut r);
         let peak = l.iter().chain(r.iter()).fold(0.0f32, |m, &x| m.max(x.abs()));
         assert!(peak <= ceiling + 1e-6, "peak {peak} within ceiling {ceiling}");
+    }
+
+    #[test]
+    fn lookahead_ducks_before_a_peak_reaches_the_output() {
+        // A quiet stream with one loud spike. With working look-ahead the gain has already
+        // ducked by the time the spike exits the delay, so the (quiet) samples just before
+        // the spike's output position are attenuated well below their input level. The old
+        // bug computed gain from the newest input and applied it to the *delayed* sample, so
+        // the gain had released by the time the spike came out — caught only by the hard clip.
+        let lookahead_ms = 3.0;
+        let mut bus = MasterBus::with_params(SR, lookahead_ms, -0.3, 80.0, 1.0, 25.0);
+        let look = (lookahead_ms * 0.001 * SR) as usize;
+        let quiet = 0.1f32;
+        let spike_at = 2000usize;
+        let mut l: Vec<f32> = (0..4000).map(|i| if i == spike_at { 6.0 } else { quiet }).collect();
+        let mut r = l.clone();
+        bus.process(&mut l, &mut r);
+
+        let ceiling = db_to_lin(-0.3);
+        let out_spike = spike_at + look;
+        assert!(l[out_spike].abs() <= ceiling + 1e-4, "spike limited ({})", l[out_spike]);
+        let pre = l[out_spike - 10].abs();
+        assert!(pre < 0.5 * quiet, "gain ducked ahead of the peak ({pre} vs {quiet})");
     }
 
     #[test]
