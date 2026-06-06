@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      strobe:
+        specifier: workspace:*
+        version: link:packages/strobe
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

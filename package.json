@@ -10,7 +10,11 @@
     "build:native": "pnpm --filter @strobe/native run build:debug",
     "typecheck": "tsc --noEmit -p packages/strobe/tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase0-kick.ts'))\""
+  },
+  "dependencies": {
+    "strobe": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
