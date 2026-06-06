@@ -6,6 +6,7 @@
 //! (TypeScript) drives it through the napi bridge (doc 04) over a lock-free ring.
 
 pub mod audio_io;
+pub mod envelope;
 pub mod error;
 pub mod event;
 pub mod filter;
