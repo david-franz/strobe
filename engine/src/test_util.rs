@@ -11,9 +11,9 @@ pub fn goertzel(signal: &[f32], freq: f32, sr: f32) -> f32 {
     let w = 2.0 * PI * freq / sr;
     let cos = w.cos();
     let coeff = 2.0 * cos;
-    let (mut s0, mut s1, mut s2) = (0.0f32, 0.0f32, 0.0f32);
+    let (mut s1, mut s2) = (0.0f32, 0.0f32);
     for &x in signal {
-        s0 = x + coeff * s1 - s2;
+        let s0 = x + coeff * s1 - s2;
         s2 = s1;
         s1 = s0;
     }
