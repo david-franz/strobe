@@ -298,6 +298,43 @@ mod tests {
     }
 
     #[test]
+    fn reverb_send_adds_a_tail_through_render() {
+        use crate::dsp::fx::{pack_fx, CHAIN_SEND_BASE, CHAIN_SLOT, SEND_REVERB};
+
+        // A kick with a reverb send should still be ringing two buffers later; without the
+        // send, the kick is long gone.
+        let late_energy = |with_send: bool| -> f32 {
+            let drops = Arc::new(AtomicU64::new(0));
+            let (producer, consumer) = ring(256, drops);
+            let pool =
+                VoicePool::new(&[(0, InstrumentDef::Drum(DrumConfig::kick()), 0)], 48_000.0, 4);
+            let mut st = AudioState::new(
+                2,
+                48_000.0,
+                Arc::new(AtomicU64::new(0)),
+                consumer,
+                pool,
+                MasterBus::new(48_000.0),
+                Arc::new(EngineStatsShared::default()),
+            );
+            producer.try_push(kick_at(0));
+            if with_send {
+                let p = pack_fx(CHAIN_SLOT, CHAIN_SEND_BASE + SEND_REVERB as u8);
+                producer.try_push(track_fx(1, 0, p, 0.9));
+            }
+            let n = 8192;
+            let mut buf = vec![0.0f32; n * 2];
+            render(&mut st, &mut buf); // kick + send
+            render(&mut st, &mut buf); // body decaying
+            render(&mut st, &mut buf); // ~0.4–0.5 s: only the reverb tail remains
+            buf.iter().map(|x| x * x).sum::<f32>()
+        };
+        let dry = late_energy(false);
+        let wet = late_energy(true);
+        assert!(wet > dry * 4.0, "the reverb send leaves a tail ({wet} vs {dry})");
+    }
+
+    #[test]
     fn frame_counter_is_exact_and_monotonic() {
         let (mut st, _p) = state(2);
         let mut buf = vec![0.0f32; 256 * 2];

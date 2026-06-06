@@ -60,6 +60,7 @@ declare module "./pattern" {
     eqMid(v: Val): Pat<ControlMap>;
     eqHigh(v: Val): Pat<ControlMap>;
     room(v: Val): Pat<ControlMap>;
+    delay(v: Val): Pat<ControlMap>;
     note(v: number): Pat<ControlMap>;
     saw(): Pat<ControlMap>;
     square(): Pat<ControlMap>;
@@ -100,6 +101,7 @@ export function installSoundMethods(): void {
   proto.eqMid = merge("eqMid");
   proto.eqHigh = merge("eqHigh");
   proto.room = merge("room");
+  proto.delay = merge("delay");
   proto.note = function (this: Pat<ControlMap>, v: number) {
     return this.fmap((cm) => ({ ...cm, note: v }));
   };

@@ -25,7 +25,8 @@ export interface ControlMap {
   decay?: number;
   sustain?: number;
   release?: number;
-  room?: number | Pat<number>; // reverb send (Phase 3 engine; key accepted now)
+  room?: number | Pat<number>; // reverb send level
+  delay?: number | Pat<number>; // delay send level
   sidechain?: string; // duck against named track (Phase 3; key accepted now)
   [k: string]: number | string | Pat<number> | undefined;
 }
@@ -42,6 +43,7 @@ const SLOT_EQ = 1;
 const SLOT_DUCK = 8;
 const CHAIN_SLOT = 0xff; // chain-level params (send levels) rather than a numbered slot
 const SEND_REVERB = 0;
+const SEND_DELAY = 1;
 const CHAIN_SEND_BASE = 0x10; // send `bus` level → CHAIN_SLOT param 0x10 + bus
 // Performance-filter params: each cutoff id also selects the SVF mode (≥0x02: avoid FX_MIX/FX_BYPASS).
 const PF_CUTOFF_LP = 0x02;
@@ -78,6 +80,7 @@ export const PARAM_REGISTRY: Record<string, Routing> = {
   pan: { kind: "paramSet", param: 13 },
   speed: { kind: "trigField", field: "speed" },
   room: { kind: "trackFx", slot: CHAIN_SLOT, param: CHAIN_SEND_BASE + SEND_REVERB },
+  delay: { kind: "trackFx", slot: CHAIN_SLOT, param: CHAIN_SEND_BASE + SEND_DELAY },
   sidechain: { kind: "trackFx", slot: SLOT_DUCK, param: 0x02 }, // source track (feature 06)
 };
 
@@ -94,6 +97,7 @@ export const PARAM_RAMP_KEYS = new Set([
   "pan",
   "gain",
   "room",
+  "delay",
 ]);
 
 const NAME_TO_SEMI: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };

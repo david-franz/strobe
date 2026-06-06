@@ -9,7 +9,9 @@
 //! parameter is raised above 0.
 
 pub mod chain;
+pub mod delay;
 pub mod filter_eq;
+pub mod reverb;
 pub mod sends;
 pub mod sidechain;
 pub mod smoothing;
@@ -57,9 +59,12 @@ pub fn build_track_chain(sr: f32) -> TrackEffects {
     fx
 }
 
-/// Build the shared send router. Feature 03 installs the reverb and delay buses.
-pub fn build_send_router(_sr: f32) -> SendRouter {
-    SendRouter::new()
+/// Build the shared send router: bus 0 = reverb, bus 1 = delay (feature 03).
+pub fn build_send_router(sr: f32) -> SendRouter {
+    let mut router = SendRouter::new();
+    router.set_bus(SEND_REVERB, SendBus::new(Box::new(reverb::Reverb::new(sr)), sr));
+    router.set_bus(SEND_DELAY, SendBus::new(Box::new(delay::Delay::new(sr)), sr));
+    router
 }
 
 /// Read-only per-block context handed to every effect.

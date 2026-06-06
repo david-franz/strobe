@@ -235,6 +235,12 @@ describe("Hap → events compiler", () => {
     expect(fx.arg0).toBeCloseTo(0.3, 6);
   });
 
+  it(".delay(0.4) emits a TrackFx send-level on the delay bus", () => {
+    const fx = tickOnce(sound("saw").delay(0.4).query).find((r) => r.op === 0x30)!;
+    expect(fx.vp).toBe(packFx(0xff, 0x11)); // CHAIN_SLOT, delay send level (bus 1)
+    expect(fx.arg0).toBeCloseTo(0.4, 6);
+  });
+
   it(".hpf and .eqMid route to their own fx slots/params", () => {
     const hp = tickOnce(sound("saw").hpf(2000).query).find((r) => r.op === 0x30)!;
     expect(hp.vp).toBe(packFx(0, 0x04)); // filter slot, cutoff-HP (mode follows the param id)
