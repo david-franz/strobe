@@ -86,6 +86,20 @@ fn one_pole_coeff(seconds: f32, sr: f32) -> f32 {
     1.0 - (-SETTLE / (s * sr)).exp()
 }
 
+/// The exponential attack glides toward this overshoot target and ends when it crosses 1.0
+/// (a one-pole aimed straight at 1.0 would only reach ~63% within its time).
+const ATTACK_TARGET: f32 = 1.2;
+
+/// One-pole coeff for the exponential attack, sized so `level(t) = ATTACK_TARGET·(1−e^{−t/τ})`
+/// crosses 1.0 at exactly `attack_s` — i.e. `attack_s/τ = ln(ATTACK_TARGET/(ATTACK_TARGET−1))`.
+/// (The old code reused `one_pole_coeff`'s 5-time-constant settle here, so the attack hit full
+/// level at only ~1/3 of `attack_s`.)
+fn attack_coeff(attack_s: f32, sr: f32) -> f32 {
+    let s = attack_s.max(MIN_SEG_S);
+    let time_constants = (ATTACK_TARGET / (ATTACK_TARGET - 1.0)).ln();
+    1.0 - (-time_constants / (s * sr)).exp()
+}
+
 impl Adsr {
     pub fn new(cfg: AdsrConfig, sr: f32) -> Self {
         let mut a = Self {
@@ -107,7 +121,7 @@ impl Adsr {
     fn recompute(&mut self) {
         let a = self.cfg.attack_s.max(MIN_SEG_S);
         self.attack_inc = 1.0 / (a * self.sr);
-        self.attack_coeff = one_pole_coeff(self.cfg.attack_s, self.sr);
+        self.attack_coeff = attack_coeff(self.cfg.attack_s, self.sr);
         self.decay_coeff = one_pole_coeff(self.cfg.decay_s, self.sr);
         self.release_coeff = one_pole_coeff(self.cfg.release_s, self.sr);
     }
@@ -143,7 +157,9 @@ impl Adsr {
             Stage::Attack => {
                 match self.cfg.attack_curve {
                     SegCurve::Linear => self.level += self.attack_inc,
-                    SegCurve::Exponential => self.level += self.attack_coeff * (1.2 - self.level),
+                    SegCurve::Exponential => {
+                        self.level += self.attack_coeff * (ATTACK_TARGET - self.level)
+                    }
                 }
                 if self.level >= 1.0 {
                     self.level = 1.0;
@@ -288,6 +304,24 @@ mod tests {
             }
         }
         assert!(finished, "tail reaches epsilon");
+    }
+
+    #[test]
+    fn exponential_attack_rises_for_the_full_attack_time() {
+        // Regression: the exp attack must peak at ~attack_s, not ~1/3 of it. (The old coeff was
+        // sized for a ~99% settle, so level crossed 1.0 at ≈0.36·attack_s and fell into decay.)
+        let mut c = cfg(EnvMode::Gated);
+        c.attack_curve = SegCurve::Exponential;
+        c.attack_s = 0.02; // 20 ms
+        let mut e = Adsr::new(c, SR);
+        e.trigger(0);
+        for _ in 0..(0.012 * SR) as usize {
+            e.tick();
+        }
+        let at60 = e.level();
+        let next = e.tick();
+        assert!(next > at60, "still attacking at 60% of attack_s ({next} <= {at60})");
+        assert!(at60 < 1.0, "has not peaked at 60% of attack_s ({at60})");
     }
 
     #[test]
