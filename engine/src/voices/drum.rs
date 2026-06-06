@@ -60,4 +60,10 @@ impl KickVoice {
         self.pending_offset = 0;
         self.level = level;
     }
+
+    /// Test helper: observe the sub-buffer offset set by the last `trigger_at`
+    /// (used by `scheduler::drain` tests to assert sample-accurate placement).
+    pub fn test_pending_offset(&self) -> u32 {
+        self.pending_offset
+    }
 }

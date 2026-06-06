@@ -12,7 +12,8 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::error::AudioError;
-use crate::scheduler::{self, RingConsumer};
+use crate::ring::RingConsumer;
+use crate::scheduler;
 use crate::stats::EngineStatsShared;
 use crate::voices::drum::KickVoice;
 
@@ -142,11 +143,13 @@ mod tests {
     use super::*;
 
     fn state(channels: usize) -> AudioState {
+        let (_producer, consumer) =
+            crate::ring::ring(64, Arc::new(AtomicU64::new(0)));
         AudioState {
             channels,
             sample_rate: 48_000.0,
             frame_clock: Arc::new(AtomicU64::new(0)),
-            consumer: RingConsumer::default(),
+            consumer,
             kick: KickVoice::new(48_000.0),
             stats: Arc::new(EngineStatsShared::default()),
         }
@@ -211,11 +214,12 @@ mod tests {
         let (device, config, cfg) =
             open_output(Some(48_000), Some(256)).expect("open default output");
         let frame_clock = Arc::new(AtomicU64::new(0));
+        let (_producer, consumer) = crate::ring::ring(4096, Arc::new(AtomicU64::new(0)));
         let st = AudioState {
             channels: cfg.channels as usize,
             sample_rate: cfg.sample_rate as f32,
             frame_clock: frame_clock.clone(),
-            consumer: RingConsumer::default(),
+            consumer,
             kick: KickVoice::new(cfg.sample_rate as f32),
             stats: Arc::new(EngineStatsShared::default()),
         };
