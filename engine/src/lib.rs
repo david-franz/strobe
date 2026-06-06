@@ -11,6 +11,8 @@ pub mod event;
 pub mod ring;
 pub mod scheduler;
 pub mod stats;
+#[cfg(test)]
+mod test_util;
 pub mod voices;
 
 use std::sync::atomic::{AtomicU64, Ordering};
