@@ -35,7 +35,7 @@ Implement the full declarative language from [../pattern-model.md](../pattern-mo
 
 - [01 · Pattern core](phase-2/01-pattern-core.md) — `Pattern`/`Hap`/`TimeSpan`, `queryArc`, constructors
 - [02 · Mini-notation parser](phase-2/02-mini-notation-parser.md) — the `"bd ~ sn*2"` DSL
-- [03 · Combinators](phase-2/03-combinators.md) — `fast`/`every`/`jux`/`degrade`/… 
+- [03 · Combinators](phase-2/03-combinators.md) — `fast`/`every`/`jux`/`degrade`/…
 - [04 · sound/note API](phase-2/04-sound-note-api.md) — the chainable modifier API
 - [05 · Continuous signals](phase-2/05-continuous-signals.md) — `sine`/`saw`/`rand` as parameters
 - [06 · Scheduler integration](phase-2/06-scheduler-integration.md) — `Hap` → engine events
@@ -65,10 +65,12 @@ Load, chop, stretch, and pitch audio — including short YouTube grabs. The hear
 Make it pleasant to actually perform and compose.
 
 - [01 · Hot-reload runtime](phase-5/01-hot-reload-runtime.md) — watch + re-eval only changed tracks
-- [02 · CLI](phase-5/02-cli.md) — `tekno play` / `repl` / `render` / `devices`
+- [02 · CLI](phase-5/02-cli.md) — `tekno play` / `repl` / `render` / `bounce` / `devices`
 - [03 · Example songs](phase-5/03-example-songs.md) — runnable techno/hip-hop/pad songs
 - [04 · Packaging & prebuilts](phase-5/04-packaging-prebuilts.md) — `npm i`, no Rust toolchain
-- [05 · Getting-started docs](phase-5/05-getting-started-docs.md) — the user guide set
+- [05 · Session recording](phase-5/05-session-recording.md) — capture a whole performance, re-render to stems
+- [06 · Audio capture & stems](phase-5/06-audio-capture-stems.md) — record master + per-track stems live
+- [07 · Getting-started docs](phase-5/07-getting-started-docs.md) — the user guide set (written last)
 
 ## [Phase 6 — Web backend](phase-6/00-overview.md) *(later)*
 Run the same engine and the same song code in a browser — near-zero cost for the future frontend.

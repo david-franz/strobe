@@ -168,7 +168,7 @@ p1( note("<c3 eb3 g3 bb3>")                     // a chord, one note per cycle, 
 - **To the [CLI](02-cli.md):** each song is the argument to `tekno play examples/<name>.ts`; `hello-kick.ts` is the one the getting-started doc walks through.
 - **To the [hot-reload runtime](01-hot-reload-runtime.md):** the multi-track songs (`techno-sidechain`, `hiphop-chop`) are the fixtures for the "only changed tracks swap" acceptance test — editing one `pN` line must swap only that track.
 - **To [Phase 1–4](../../roadmap.md):** they exercise synth/drum voices (1), the parser + combinators + chain API + continuous signals (2), the effects rack incl. sidechain (3), and the sampler `.chop`/`.slice` (4). They are the de-facto integration test that those phases compose correctly.
-- **To the [docs](05-getting-started-docs.md):** the getting-started guide builds `hello-kick.ts` line by line; the combinator and chain-API references cite snippets from `techno-sidechain.ts` and `filter-pad.ts`.
+- **To the [docs](07-getting-started-docs.md):** the getting-started guide builds `hello-kick.ts` line by line; the combinator and chain-API references cite snippets from `techno-sidechain.ts` and `filter-pad.ts`.
 
 ## Edge cases & risks
 

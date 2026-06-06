@@ -182,14 +182,14 @@ A contributor on an unlisted platform, or one hacking on the engine, builds from
 npm run build         # napi build --platform --release  → engine.<platform>.node next to index.js
 ```
 
-The loader's step (1) above prefers that locally-built `.node`, so a source build "just works" without touching the optional dependencies. The error thrown when no prebuilt and no local binary exists points the user at [troubleshooting](05-getting-started-docs.md) with the source-build instructions. `npm i` for an end user never triggers a source build (no `install`/`postinstall` compile step), so a missing Rust toolchain is never fatal for users — only the (clearly messaged) unlisted-platform case is, and that is the contributor path.
+The loader's step (1) above prefers that locally-built `.node`, so a source build "just works" without touching the optional dependencies. The error thrown when no prebuilt and no local binary exists points the user at [troubleshooting](07-getting-started-docs.md) with the source-build instructions. `npm i` for an end user never triggers a source build (no `install`/`postinstall` compile step), so a missing Rust toolchain is never fatal for users — only the (clearly messaged) unlisted-platform case is, and that is the contributor path.
 
 ### Optional external CLIs: `yt-dlp`/`ffmpeg`
 
 These are **not** npm packages and are **never bundled**. They are needed only by the [Phase 4 YouTube ingest](../phase-4/00-overview.md) (`sample.fromYouTube`), which is itself opt-in ([roadmap.md](../../roadmap.md#risks)). The packaging contract:
 
 - **No install-time dependency.** `npm i tekno` neither installs nor checks for them. Playback, the synth/drum voices, and local-file sampling all work without them.
-- **Lazy runtime check.** The first time a song calls `sample.fromYouTube(...)`, the sampler runs a one-time presence check (`yt-dlp --version`, `ffmpeg -version` on the PATH). If either is missing, it throws a clear, actionable error naming the missing tool and pointing at [docs/guide/sampling.md](05-getting-started-docs.md) (with the install hint per OS and the copyright/ToS note) — it does **not** crash the engine.
+- **Lazy runtime check.** The first time a song calls `sample.fromYouTube(...)`, the sampler runs a one-time presence check (`yt-dlp --version`, `ffmpeg -version` on the PATH). If either is missing, it throws a clear, actionable error naming the missing tool and pointing at [docs/guide/sampling.md](07-getting-started-docs.md) (with the install hint per OS and the copyright/ToS note) — it does **not** crash the engine.
 - **`tekno doctor` (optional convenience).** A small CLI subcommand can report which optional tools are present, so users can verify their sampling setup before a session. (Implementation is trivial atop the same presence check; listed here so packaging owns the contract.)
 
 ```ts

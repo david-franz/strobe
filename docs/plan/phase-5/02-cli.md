@@ -2,11 +2,12 @@
 
 ## Purpose
 
-The CLI is the front door. A new user should be able to write a song file and bring it to life with one command, with no boilerplate runtime script (the [Phase 0 `npx tsx -e "..."` incantation](../phase-0/07-hot-reload-demo.md#running-it) was fine for proving the spine, but no one wants to type it to perform). The CLI wraps the [hot-reload runtime](01-hot-reload-runtime.md) in four small, predictable commands:
+The CLI is the front door. A new user should be able to write a song file and bring it to life with one command, with no boilerplate runtime script (the [Phase 0 `npx tsx -e "..."` incantation](../phase-0/07-hot-reload-demo.md#running-it) was fine for proving the spine, but no one wants to type it to perform). The CLI wraps the [hot-reload runtime](01-hot-reload-runtime.md) in a handful of small, predictable commands:
 
-- `tekno play song.ts` — load the song, start the engine, watch the file, play live (the headline command; this is what satisfies the roadmap "saving the file updates the music live with no restart").
+- `tekno play song.ts` — load the song, start the engine, watch the file, play live (the headline command; this is what satisfies the roadmap "saving the file updates the music live with no restart"). With `--rec`/`--stems`/`--session` it also records the performance ([06](06-audio-capture-stems.md) / [05](05-session-recording.md)).
 - `tekno repl` — drop into an interactive prompt against a live engine.
-- `tekno render song.ts out.wav` — render the song offline to a `.wav` file (a non-real-time "bounce").
+- `tekno render song.ts out/` — render a *static* song offline to `master.wav` (+ `--stems`) — a non-real-time "bounce".
+- `tekno bounce session out/` — re-render a recorded `.teknosession` (a captured *performance*) offline to `master.wav` (+ `--stems`) ([05](05-session-recording.md)).
 - `tekno devices` — list available audio output devices (so the user can pick one when the default is wrong).
 
 It also owns the cross-cutting concerns a CLI must get right: argument parsing, configuration (sample rate, buffer size, lookahead), and **graceful Ctrl-C** that stops the engine cleanly so the audio device is released and no dangling thread remains.
@@ -22,7 +23,8 @@ packages/tekno/
       index.ts          # NEW — arg parsing + command dispatch
       play.ts           # NEW — `play` command → runtime.play()
       repl.ts           # NEW — `repl` command → runtime.startRepl()
-      render.ts         # NEW — `render` command → offline bounce
+      render.ts         # NEW — `render` command → offline bounce of a static song
+      bounce.ts         # NEW — `bounce` command → re-render a recorded .teknosession
       devices.ts        # NEW — `devices` command → engine.listDevices()
       config.ts         # NEW — resolve config (flags → env → tekno.config → defaults)
   package.json          # adds "bin": { "tekno": "dist/bin/tekno.js" }
@@ -41,12 +43,13 @@ tekno — write techno and hip-hop as code, live.
 USAGE
   tekno play <song.ts> [options]     load, watch, and play a song live
   tekno repl [song.ts] [options]     interactive live-coding prompt
-  tekno render <song.ts> <out.wav>   render a song offline to a WAV file
+  tekno render <song.ts> <out.dir>   render a static song offline to master(+stems)
+  tekno bounce <session> <out.dir>   re-render a recorded .teknosession offline
   tekno devices                      list available audio output devices
   tekno --version                    print version
   tekno --help                       this help
 
-OPTIONS (play / repl / render)
+OPTIONS (play / repl / render / bounce)
   --sample-rate <hz>     audio sample rate            (default 48000)
   --buffer <frames>      audio buffer size            (default 256)
   --lookahead <ms>       scheduler look-ahead         (default 100)
@@ -55,10 +58,20 @@ OPTIONS (play / repl / render)
   --bpm <n>              convenience: setcps(bpm/60/4) before loading the song
   -q, --quiet            suppress the telemetry status line
 
+RECORDING OPTIONS (play / repl, and render / bounce outputs)
+  --rec <dir>            capture live audio to <dir> while playing       (see 06)
+  --session             also write a re-renderable .teknosession bundle  (see 05)
+  --stems               write per-track stems (one file per channel loop)
+  --format <fmt>         wav-f32 | wav-i24 | flac                        (default wav-f32)
+  --force                overwrite an existing capture/output directory
+
 EXAMPLES
   tekno play examples/techno-sidechain.ts
-  tekno play song.ts --buffer 512 --lookahead 150   # safer on a busy machine
-  tekno render song.ts mix.wav --cycles 16
+  tekno play song.ts --buffer 512 --lookahead 150     # safer on a busy machine
+  tekno play song.ts --rec takes/ --stems             # record master + stems live
+  tekno play song.ts --rec takes/ --session           # record a re-renderable session too
+  tekno render song.ts mix/ --cycles 16 --stems       # offline bounce of a static song
+  tekno bounce takes/set.teknosession out/ --stems    # re-render a recorded performance
   tekno devices
 ```
 
@@ -67,7 +80,7 @@ EXAMPLES
 ```ts
 import { parseArgs } from "node:util";
 
-const COMMANDS = ["play", "repl", "render", "devices"] as const;
+const COMMANDS = ["play", "repl", "render", "bounce", "devices"] as const;
 type Command = (typeof COMMANDS)[number];
 
 export async function main(argv = process.argv.slice(2)) {
@@ -92,6 +105,11 @@ export async function main(argv = process.argv.slice(2)) {
       device:        { type: "string" },
       cycles:        { type: "string" },
       bpm:           { type: "string" },
+      rec:           { type: "string" },                 // capture dir (play/repl)
+      session:       { type: "boolean" },                // also write a .teknosession
+      stems:         { type: "boolean" },                // per-track stems
+      format:        { type: "string" },                 // wav-f32 | wav-i24 | flac
+      force:         { type: "boolean" },                // overwrite output dir
       quiet:         { type: "boolean", short: "q" },
     },
   });
@@ -101,6 +119,7 @@ export async function main(argv = process.argv.slice(2)) {
     case "play":    return runPlay(positionals[0], config);
     case "repl":    return runRepl(positionals[0], config);
     case "render":  return runRender(positionals[0], positionals[1], config);
+    case "bounce":  return runBounce(positionals[0], positionals[1], config);
     case "devices": return runDevices();
   }
 }
@@ -119,6 +138,12 @@ export interface Config {
   cycles?: number;      // render only
   bpm?: number;
   quiet: boolean;
+  // recording (see 05 + 06)
+  recDir?: string;      // --rec <dir>: capture live audio here
+  session?: boolean;    // --session: also write a .teknosession
+  stems?: boolean;      // --stems: per-track stems
+  format?: "wav-f32" | "wav-i24" | "flac";   // --format (default wav-f32)
+  force?: boolean;      // --force: overwrite output dir
 }
 
 export function resolveConfig(flags: Record<string, unknown>): Config {
@@ -133,6 +158,11 @@ export function resolveConfig(flags: Record<string, unknown>): Config {
     cycles:       flags.cycles != null ? Number(flags.cycles) : undefined,
     bpm:          flags.bpm != null ? Number(flags.bpm) : undefined,
     quiet:        Boolean(flags.quiet),
+    recDir:       (flags.rec as string) ?? undefined,
+    session:      Boolean(flags.session),
+    stems:        Boolean(flags.stems),
+    format:       (flags.format as Config["format"]) ?? "wav-f32",
+    force:        Boolean(flags.force),
   };
 }
 ```
@@ -144,7 +174,7 @@ Thin wrapper over [`runtime.play()`](01-hot-reload-runtime.md#the-watch--eval-lo
 ```ts
 export async function runPlay(songPath: string | undefined, cfg: Config) {
   if (!songPath) return fail("play requires a <song.ts> path");
-  const onStats = cfg.quiet ? undefined : printStatsLine;   // frame/underruns/late/ring
+  const onStats = cfg.quiet ? undefined : printStatsLine;   // frame/underruns/late/ring/dropped
   const session = await play(resolve(songPath), {
     sampleRate: cfg.sampleRate,
     bufferFrames: cfg.bufferFrames,
@@ -153,24 +183,33 @@ export async function runPlay(songPath: string | undefined, cfg: Config) {
     bpm: cfg.bpm,
     onStats,
   });
-  installGracefulShutdown(session);     // see below
+
+  // Recording — start capture and/or a session tee if requested (see 05 + 06).
+  if (cfg.recDir) {
+    await prepareOutDir(cfg.recDir, cfg.force);
+    await session.startCapture({ dir: cfg.recDir, stems: cfg.stems, master: true, format: cfg.format });
+    if (cfg.session) session.startSession(cfg.recDir);   // .teknosession bundle alongside the WAVs
+    process.stdout.write(`● recording → ${cfg.recDir}${cfg.stems ? " (+stems)" : ""}\n`);
+  }
+
+  installGracefulShutdown(session);     // flushes capture/session on Ctrl-C, then stops audio
   process.stdout.write(`▶ playing ${songPath} — edit & save to change it live. Ctrl-C to stop.\n`);
 }
 ```
 
-The telemetry line is the same `frame=… underruns=… late=… ring=…` line from [Phase 0 / 07](../phase-0/07-hot-reload-demo.md#the-runtime-boot-watch-swap), so the verification recipe is visible while you perform.
+The telemetry line is the same `frame=… underruns=… late=… ring=…` line from [Phase 0 / 07](../phase-0/07-hot-reload-demo.md#the-runtime-boot-watch-swap) (with `dropped=…` added when capturing), so the verification recipe is visible while you perform. `installGracefulShutdown` is extended to `await session.stopCapture()` / `stopSession()` **before** stopping the engine, so a Ctrl-C never truncates a take's WAV header.
 
 ### `repl` (in `cli/repl.ts`)
 
 Boots the engine/clock/scheduler exactly as `play` does (optionally loading a starter song first if a path is given), then hands control to [`runtime.startRepl()`](01-hot-reload-runtime.md#the-repl-in-runtimereplts). If a song path is passed, the REPL *also* watches it, so you can mix file-editing and live typing in one session.
 
-### `render` — offline bounce (in `cli/render.ts`)
+### `render` — offline bounce of a static song (in `cli/render.ts`)
 
-`render` does **not** open the `cpal` stream. Instead it drives the engine in an **offline / non-real-time** mode: the same Rust render loop runs as fast as the CPU allows, the scheduler queries the song's patterns cycle-by-cycle for a fixed number of cycles (`--cycles`, default inferred from the song or 8), and the rendered frames are written to a WAV file. This reuses the entire control plane — patterns, combinators, effects — with only the audio sink swapped.
+`render` does **not** open the `cpal` stream. Instead it drives the engine in an **offline / non-real-time** mode: the same Rust render loop runs as fast as the CPU allows, the scheduler queries the song's patterns cycle-by-cycle for a fixed number of cycles (`--cycles`, default inferred from the song or 8). It writes through the **same master/stem capture sinks** as live recording ([06](06-audio-capture-stems.md)), so `--stems` works here too and the output layout matches `play --rec` and `bounce`. This reuses the entire control plane — patterns, combinators, effects — with only the audio sink swapped.
 
 ```ts
-export async function runRender(songPath: string, outPath: string, cfg: Config) {
-  if (!songPath || !outPath) return fail("render requires <song.ts> <out.wav>");
+export async function runRender(songPath: string, outDir: string, cfg: Config) {
+  if (!songPath || !outDir) return fail("render requires <song.ts> <out.dir>");
   const engine = createNativeEngine();
   await engine.startOffline({ sampleRate: cfg.sampleRate });   // no cpal stream
   const clock = new Clock(engine); clock.anchor(cfg.sampleRate); setActiveClock(clock);
@@ -178,14 +217,31 @@ export async function runRender(songPath: string, outPath: string, cfg: Config) 
 
   await evalSong(resolve(songPath)).then((r) => applyInitial(clock, r.assignments));
 
+  await prepareOutDir(outDir, cfg.force);
+  await engine.startCapture({ dir: outDir, master: true, stems: cfg.stems, format: cfg.format });
   const cycles = cfg.cycles ?? inferCycles(songPath) ?? 8;
-  const pcm = await renderCycles(scheduler, engine, clock, cycles);  // Float32, interleaved
-  await writeWav(resolve(outPath), pcm, cfg.sampleRate, 2 /* stereo */);
-  process.stdout.write(`✓ rendered ${cycles} cycles → ${outPath}\n`);
+  await renderCycles(scheduler, engine, clock, cycles);   // drives the capture sinks
+  const out = await engine.stopCapture();
+  process.stdout.write(`✓ rendered ${cycles} cycles → ${out.master}${cfg.stems ? " (+stems)" : ""}\n`);
 }
 ```
 
-> `startOffline` is a small addition to the [napi `Engine` interface](../phase-0/04-napi-bridge.md): it allocates the same voice/FX graph but renders into a returned buffer instead of `cpal`. Because the audio path is identical, an offline bounce sounds exactly like the live output. WAV writing is a tiny pure-TS encoder (no dependency).
+> `startOffline` is a small addition to the [napi `Engine` interface](../phase-0/04-napi-bridge.md): it allocates the same voice/FX graph but renders as fast as the CPU allows instead of via `cpal`. Because the audio path is identical, an offline bounce sounds exactly like the live output. Capture/encoding is the [audio-capture sink](06-audio-capture-stems.md) running in offline mode.
+
+### `bounce` — re-render a recorded session (in `cli/bounce.ts`)
+
+`bounce` re-renders a `.teknosession` ([05](05-session-recording.md)) — a captured *performance*, with every live change baked into its event journal — offline to pristine `master.wav` (+ `--stems`). Unlike `render`, the input is not a static song file but a recorded take, so the output reproduces exactly what was performed, deterministically and dropout-free.
+
+```ts
+export async function runBounce(sessionPath: string, outDir: string, cfg: Config) {
+  if (!sessionPath || !outDir) return fail("bounce requires <session> <out.dir>");
+  await prepareOutDir(outDir, cfg.force);
+  const out = await bounce(resolve(sessionPath), resolve(outDir), { stems: cfg.stems, format: cfg.format });
+  process.stdout.write(`✓ bounced ${sessionPath} → ${out.master}${cfg.stems ? " (+stems)" : ""}\n`);
+}
+```
+
+> `bounce()` is the session re-render entry point from [05 · Session recording](05-session-recording.md#re-render-deterministic-offline-bounce); it loads the bundle's instruments + sample buffers, replays the journal in frame order through the offline engine, and writes through the same capture sinks. `--sample-rate` is ignored (the session pins its own rate); a mismatch warns per [event-protocol versioning](../../event-protocol.md#versioning).
 
 ### `devices` (in `cli/devices.ts`)
 
