@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import type { Engine } from "../backend/engine";
 import { Clock } from "../clock/clock";
 import { nextBoundaryDelayMs, swapAtCycleBoundary, loadSongSafely } from "./runtime";
-import { p1, getTrack } from "./tracks";
+import { p1, getTrack, promotePending, clearAllTracks } from "./tracks";
 import { bdEvery } from "../pattern/builders";
 
 function fakeEngine() {
@@ -17,6 +17,7 @@ function fakeEngine() {
 }
 
 afterEach(() => vi.useRealTimers());
+beforeEach(() => clearAllTracks());
 
 describe("nextBoundaryDelayMs", () => {
   it("waits a full cycle from a boundary", () => {
@@ -32,7 +33,7 @@ describe("nextBoundaryDelayMs", () => {
 });
 
 describe("swapAtCycleBoundary", () => {
-  it("defers the swap until the boundary, then reassigns the slot", async () => {
+  it("defers the swap until the boundary, then stages it for promotion", async () => {
     vi.useFakeTimers();
     const { engine, setFrame } = fakeEngine();
     const clock = new Clock(engine);
@@ -45,15 +46,18 @@ describe("swapAtCycleBoundary", () => {
     expect(getTrack(1)).toBe(before);
 
     const done = swapAtCycleBoundary(clock, async () => {
-      p1(bdEvery(8));
+      p1(bdEvery(8)); // re-assignment → staged
     });
 
-    // Not yet applied — still waiting for the boundary.
+    // Not yet applied — still waiting for the boundary timer.
     expect(getTrack(1)).toBe(before);
 
     await vi.advanceTimersByTimeAsync(nextBoundaryDelayMs(0.25, 1)); // 750 ms
     await done;
 
+    // The re-assignment is staged; `current` is unchanged until the scheduler promotes it.
+    expect(getTrack(1)).toBe(before);
+    promotePending(99); // the scheduler does this at the next cycle boundary
     expect(getTrack(1)).not.toBe(before);
   });
 });

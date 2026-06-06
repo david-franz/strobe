@@ -21,3 +21,9 @@ export function setcps(x: number): void {
 export function setbpm(bpm: number): void {
   active?.setbpm(bpm);
 }
+
+/** Current cycle position from the live clock (0 before one is active). Used by the
+ *  track registry to stage a live re-assignment at the next cycle boundary. */
+export function currentCycle(): number {
+  return active ? active.nowCycle() : 0;
+}

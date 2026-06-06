@@ -6,7 +6,7 @@
 
 import type { Engine } from "../backend/engine";
 import type { Clock } from "../clock/clock";
-import { activeTracks } from "./tracks";
+import { activeTracks, promotePending } from "./tracks";
 import { queryArc, hasOnset, type Hap, type Pattern } from "../pattern/pattern";
 import { noteToFreq, PARAM_REGISTRY, PARAM_RAMP_KEYS, type ControlMap } from "../pattern/control";
 import { isContinuousPattern } from "../pattern/signals";
@@ -230,6 +230,8 @@ export class Scheduler {
     const windowEnd = nowCycle + this.opts.lookaheadS * clock.cps;
     const begin = Math.max(this.scheduledUntilCycle, nowCycle);
     if (windowEnd <= begin) return;
+
+    promotePending(begin); // swap any staged patterns due by this cycle, before querying
 
     const events: RawEvent[] = [];
     for (const { id, pattern } of activeTracks()) {
