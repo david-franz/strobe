@@ -63,13 +63,26 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 
 ```text
 strobe/
-  engine/            # Rust audio core (cpal, fundsp, symphonia, ssstretch)
+  engine/                  # Rust audio core (cpal, fundsp, symphonia, ssstretch)
+    src/
+      audio_io.rs scheduler.rs voice_alloc.rs   # the engine spine
+      graph.rs stats.rs error.rs lib.rs
+      protocol/            # the wire format: event records + the lock-free ring
+      dsp/                 # signal-processing blocks: filter, envelope, effects (master bus)
+      voices/              # oscillator + synth voice + drum kit
   bindings/
-    native/          # napi-rs → .node addon (owns the cpal audio thread)
-    web/             # wasm-bindgen → WASM + AudioWorklet (later)
-  packages/strobe/    # the TypeScript library you write songs in
-  examples/          # runnable songs
-  docs/              # architecture & design docs
+    native/                # napi-rs → .node addon (owns the cpal audio thread)
+    web/                   # wasm-bindgen → WASM + AudioWorklet (later)
+  packages/strobe/         # the TypeScript library you write songs in
+    src/
+      backend/             # the Engine interface + native bridge
+      clock/               # cps clock + cycle↔frame mapping
+      pattern/             # Pattern/Hap/TimeSpan + builders (Phase 2: parser, combinators)
+      instruments/         # synth + drum builders, preset ids
+      runtime/             # look-ahead scheduler, track slots, file-watch hot-reload
+      index.ts             # public surface
+  examples/                # runnable songs
+  docs/                    # architecture & design docs
 ```
 
 ## Status

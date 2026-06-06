@@ -113,10 +113,11 @@ See [event-protocol.md](event-protocol.md) for the exact bytes that cross the br
 
 - **`audio_io.rs`** — opens the `cpal` stream, picks a device/sample rate, runs the master limiter, and calls the render loop per buffer.
 - **`scheduler.rs`** — the consumer side of the ring buffer; applies events at their exact frames.
-- **`voices/`** — `synth.rs` (osc → filter → envelope → amp), `drum.rs` (synthesized kick/snare/hat/clap), `sampler.rs` (buffer playback + time-stretch + slice/granular). Each voice is a `fundsp` graph.
+- **`protocol/`** — `event.rs` (the fixed 32-byte record + decode) and `ring.rs` (the lock-free SPSC ring); the wire format that crosses the bridge.
+- **`voices/`** — `oscillator.rs`, `synth.rs` (osc → filter → envelope → amp), `drum.rs` (synthesized kick/snare/hat/clap), and (later) `sampler.rs`.
 - **`voice_alloc.rs`** — assigns incoming note events to a pool of voices; steals the oldest/quietest when full.
-- **`effects.rs`** — the per-track and send effects. Sidechain reads a control signal from another track (e.g. the kick) to duck a target — the techno "pump."
-- **`graph.rs`** — helpers that build the above `fundsp` graphs from voice/effect configs sent by TS.
+- **`dsp/`** — the signal-processing building blocks: `filter.rs` (SVF), `envelope.rs` (ADSR), `effects.rs` (master bus + limiter now; the per-track/send effects rack in Phase 3 — incl. the sidechain "pump").
+- **`graph.rs`** — the `InstrumentConfig` voices are built from, sent by TS over the control channel.
 
 ## Why these technology choices
 
