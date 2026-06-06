@@ -1,0 +1,12 @@
+# Rust
+/target
+**/target
+
+# Node
+node_modules
+dist
+*.node
+*.tsbuildinfo
+
+# OS
+.DS_Store
