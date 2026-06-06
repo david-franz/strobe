@@ -30,6 +30,19 @@ pub fn rms(signal: &[f32]) -> f32 {
     (signal.iter().map(|&x| x * x).sum::<f32>() / signal.len() as f32).sqrt()
 }
 
+/// Deterministic white noise in [-1, 1] (xorshift), for reproducible filter tests.
+pub fn white_noise(n: usize, seed: u32) -> Vec<f32> {
+    let mut st = seed | 1;
+    (0..n)
+        .map(|_| {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            (st as f32 / u32::MAX as f32) * 2.0 - 1.0
+        })
+        .collect()
+}
+
 /// Estimate fundamental frequency by counting rising zero-crossings.
 pub fn zero_crossing_freq(signal: &[f32], sr: f32) -> f32 {
     let mut crossings = 0usize;
