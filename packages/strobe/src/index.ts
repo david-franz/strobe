@@ -7,12 +7,12 @@
 // `sound("bd*4")` (the parser-backed API) intentionally lands with the mini-notation
 // parser in Phase 2; Phase 0 uses the bdEvery/bdEuclid stand-ins.
 
-export { setcps, setbpm } from "./clock-singleton";
-export { p1, p2, p3, p4, p5, p6, p7, p8 } from "./tracks";
-export { seq, every, euclid } from "./patterns";
-export { bdEvery, bdEuclid } from "./pattern";
-export type { Pattern, Hap, TimeSpan, SoundValue } from "./pattern";
-export { PRESETS, resolveNote } from "./presets";
-export type { PresetName, NoteValue } from "./presets";
-export { noteToHz, midiToHz, synth } from "./synth";
-export { drum } from "./drums";
+export { setcps, setbpm } from "./clock/singleton";
+export { p1, p2, p3, p4, p5, p6, p7, p8 } from "./runtime/tracks";
+export { seq, every, euclid } from "./pattern/builders";
+export { bdEvery, bdEuclid } from "./pattern/builders";
+export type { Pattern, Hap, TimeSpan, SoundValue } from "./pattern/pattern";
+export { PRESETS, resolveNote } from "./instruments/presets";
+export type { PresetName, NoteValue } from "./instruments/presets";
+export { noteToHz, midiToHz, synth } from "./instruments/synth";
+export { drum } from "./instruments/drums";

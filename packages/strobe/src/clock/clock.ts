@@ -5,7 +5,7 @@
 // Feature 05 introduces the minimal mapping the scheduler needs; feature 06 adds
 // setcps (with continuity re-anchoring), the BPM helpers, and their tests.
 
-import type { Engine } from "./engine";
+import type { Engine } from "../backend/engine";
 
 export class Clock {
   /** Cycles per second (default ~120 BPM at 4 beats/cycle). */

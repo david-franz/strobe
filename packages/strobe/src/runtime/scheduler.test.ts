@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { Engine } from "./engine";
-import type { Pattern } from "./pattern";
-import { Clock } from "./clock";
+import type { Engine } from "../backend/engine";
+import type { Pattern } from "../pattern/pattern";
+import { Clock } from "../clock/clock";
 import { Scheduler, writeNoteOn, writeTempo } from "./scheduler";
 import { setTrack } from "./tracks";
 

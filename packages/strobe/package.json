@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime/runtime.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -5,11 +5,11 @@
 // one pushEvents call. Jitter here is invisible because the scheduler always works
 // ~100 ms into the future and the sample count decides the music.
 
-import type { Engine } from "./engine";
-import type { Clock } from "./clock";
+import type { Engine } from "../backend/engine";
+import type { Clock } from "../clock/clock";
 import { activeTracks } from "./tracks";
-import { queryArc, type Hap } from "./pattern";
-import { resolveNote } from "./presets";
+import { queryArc, type Hap } from "../pattern/pattern";
+import { resolveNote } from "../instruments/presets";
 
 const REC = 32; // bytes per record (event-protocol.md)
 const MAX_EVENTS_PER_TICK = 1024;

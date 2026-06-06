@@ -1,8 +1,8 @@
-// Generic pattern builders (a thin Phase 1 slice of the full Phase 2 mini-notation):
-// place values evenly across the cycle, with `null` meaning a rest. Each value is a
-// `NoteValue` the scheduler turns into a NoteOn.
+// Concrete pattern builders (a thin Phase 1 slice of the full Phase 2 mini-notation):
+// place values evenly across the cycle, with `null` meaning a rest. Includes the Phase 0
+// `bd` stand-ins (bdEvery/bdEuclid) and the generic seq/every/euclid helpers.
 
-import type { Pattern, Hap } from "./pattern";
+import type { Pattern, Hap, SoundValue } from "./pattern";
 
 /** Place `slots` evenly across the cycle (one slot each), repeating every cycle; `null`
  *  slots are rests. Queryable over any span, emitting each onset exactly once. */
@@ -45,4 +45,14 @@ export function every<T>(value: T, n: number): Pattern<T> {
 export function euclid<T>(value: T, k: number, n: number): Pattern<T> {
   const slots: (T | null)[] = Array.from({ length: n }, (_, i) => ((i * k) % n < k ? value : null));
   return placeEvenly(slots);
+}
+
+/** Phase 0 stand-in for `sound("bd*n")`: `n` evenly spaced "bd" onsets per cycle. */
+export function bdEvery(n: number): Pattern<SoundValue> {
+  return every<SoundValue>({ s: "bd" }, n);
+}
+
+/** Phase 0 stand-in for `sound("bd(k,n)")`: a Euclidean rhythm of `k` hits over `n`. */
+export function bdEuclid(k: number, n: number): Pattern<SoundValue> {
+  return euclid<SoundValue>({ s: "bd" }, k, n);
 }

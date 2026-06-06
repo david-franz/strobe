@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { p1, getTrack } from "./tracks";
-import { bdEvery } from "./pattern";
+import { bdEvery } from "../pattern/builders";
 
 describe("track slot", () => {
   it("p1 assigns the slot and getTrack(1) reflects the latest pattern", () => {

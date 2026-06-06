@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seq, every, euclid } from "./patterns";
+import { seq, every, euclid } from "./builders";
 import { queryArc } from "./pattern";
 
 describe("pattern builders", () => {

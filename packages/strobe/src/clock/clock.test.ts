@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Engine } from "./engine";
+import type { Engine } from "../backend/engine";
 import { Clock } from "./clock";
 
 function fakeEngine() {

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import type { Engine } from "./engine";
-import { Clock } from "./clock";
+import type { Engine } from "../backend/engine";
+import { Clock } from "../clock/clock";
 import { nextBoundaryDelayMs, swapAtCycleBoundary, loadSongSafely } from "./runtime";
 import { p1, getTrack } from "./tracks";
-import { bdEvery } from "./pattern";
+import { bdEvery } from "../pattern/builders";
 
 function fakeEngine() {
   let currentFrame = 0;

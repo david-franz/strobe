@@ -2,7 +2,7 @@
 // layer a kick, hats, snare and a bassline at once. Assigning a slot is a plain variable
 // write; the scheduler queries every active slot each tick (architecture.md "Tracks").
 
-import type { Pattern } from "./pattern";
+import type { Pattern } from "../pattern/pattern";
 
 const MAX_TRACKS = 8;
 // index 0 reserved for master/global; 1..MAX_TRACKS = p1..pN.

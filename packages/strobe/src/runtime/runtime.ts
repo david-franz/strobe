@@ -5,10 +5,10 @@
 
 import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { createNativeEngine } from "./engine";
-import { Clock } from "./clock";
+import { createNativeEngine } from "../backend/engine";
+import { Clock } from "../clock/clock";
 import { Scheduler } from "./scheduler";
-import { setActiveClock } from "./clock-singleton";
+import { setActiveClock } from "../clock/singleton";
 
 export interface PlayOpts {
   sampleRate?: number;
