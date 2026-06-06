@@ -77,7 +77,7 @@ strobe/
     src/
       backend/             # the Engine interface + native bridge
       clock/               # cps clock + cycle↔frame mapping
-      pattern/             # Pattern/Hap/TimeSpan + builders (Phase 2: parser, combinators)
+      pattern/             # Pat/Hap/TimeSpan, mini-notation parser, combinators, sound/note, signals
       instruments/         # synth + drum builders, preset ids
       runtime/             # look-ahead scheduler, track slots, file-watch hot-reload
       index.ts             # public surface
@@ -91,11 +91,12 @@ Early development. Building from a working spine outward:
 
 - ✅ **Phase 0 — proof of spine**: Rust engine makes sound; TS hot-swaps a kick loop at the cycle boundary with zero dropout. Lock-free SPSC event ring, look-ahead scheduler, napi bridge. → [`examples/phase0-kick.ts`](examples/phase0-kick.ts) (`pnpm demo`)
 - ✅ **Phase 1 — synthesis core**: a real instrument layer — band-limited oscillators (sine/saw/square/tri/noise/wavetable), a resonant state-variable filter (LP/HP/BP/notch), amp + filter ADSR envelopes, a configurable subtractive **synth voice**, a synthesized **drum kit** (bd/sn/cp/hh/oh with hat choke), **polyphony** with oldest/quietest voice-stealing (16+ voices), and a transparent master **look-ahead limiter**. → [`examples/phase1-kit.ts`](examples/phase1-kit.ts) (`pnpm demo:phase1`)
-- ⬜ Phases 2–6: pattern language → effects rack → sampling → live-coding DX → web backend.
+- ✅ **Phase 2 — pattern language**: the declarative language above is now real — `Pat<T>` (a pure function of time), the **mini-notation** parser (`"bd(3,8)"`, `~`, `*` `/`, `[]`, `<>`, `,`, `!`, `?`), the full **combinator** vocabulary (`fast`/`rev`/`every`/`iter`/`jux`/`off`/`degrade`/…, as functions and chainable methods), the **`sound()`/`note()`/`freq()`** API with chained modifiers, **continuous signals** (`sine`/`saw`/`rand`/… `.range().slow()`), the scheduler that compiles each `Hap<ControlMap>` into the 32-byte protocol, and **named tracks** with seamless cycle-boundary hot-swap + mute/solo/hush. → [`examples/phase2-song.ts`](examples/phase2-song.ts) (`pnpm demo:phase2`)
+- ⬜ Phases 3–6: effects rack → sampling → live-coding DX → web backend.
 
-> The README quickstart above shows the *target* `sound(...)`/`note(...)` pattern API, which lands with the mini-notation parser in **Phase 2**. Today you drive the engine with the Phase 1 builders (`every`, `euclid`, `seq`, preset names, `noteToHz`) — see the example.
+> The README quickstart above now runs as written (`pnpm demo:phase2`). `room`/`sidechain` and audio-rate filter ramps are parsed and compiled today but become audible with the **Phase 3** effects rack.
 
-Engine: 72 Rust tests; library: 45 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+Engine: 72 Rust tests; library: 99 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 
