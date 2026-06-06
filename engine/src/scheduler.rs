@@ -8,20 +8,23 @@
 
 use std::sync::atomic::Ordering::Relaxed;
 
+use crate::effects::MasterBus;
 use crate::event::{self, Decoded};
 use crate::ring::RingConsumer;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
 use crate::voices::ParamId;
 
-fn apply(dec: Decoded, pool: &mut VoicePool, stats: &EngineStatsShared) {
+fn apply(dec: Decoded, pool: &mut VoicePool, bus: &mut MasterBus, stats: &EngineStatsShared) {
     match dec {
         Decoded::NoteOn { voice, freq, vel, dur_frames, instrument, .. } => {
             pool.note_on(instrument as u32, voice, freq, vel, dur_frames.max(0.0) as u64);
         }
         Decoded::NoteOff { voice } => pool.note_off(voice),
-        Decoded::ParamSet { param, value, .. } => {
-            if let Some(p) = ParamId::from_u32(param) {
+        Decoded::ParamSet { track, param, value } => {
+            if track == 0 {
+                bus.set_master_param(param, value); // master/global params live on track 0
+            } else if let Some(p) = ParamId::from_u32(param) {
                 pool.set_param_all(p, value);
             }
         }
@@ -34,12 +37,14 @@ fn apply(dec: Decoded, pool: &mut VoicePool, stats: &EngineStatsShared) {
 
 /// Apply every event whose in-buffer offset is `<= pos` (including late events), then
 /// return the offset of the next event due *later* in this buffer (or `None`).
+#[allow(clippy::too_many_arguments)]
 fn apply_due(
     consumer: &mut RingConsumer,
     base: u64,
     buffer_end: u64,
     pos: usize,
     pool: &mut VoicePool,
+    bus: &mut MasterBus,
     stats: &EngineStatsShared,
 ) -> Option<usize> {
     while consumer.len() > 0 {
@@ -61,7 +66,7 @@ fn apply_due(
             if evf < base {
                 stats.late_events.fetch_add(1, Relaxed);
             }
-            apply(dec, pool, stats);
+            apply(dec, pool, bus, stats);
             consumer.advance(1);
         } else {
             return Some(off);
@@ -70,11 +75,13 @@ fn apply_due(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch_and_render(
     consumer: &mut RingConsumer,
     base: u64,
     frames: u64,
     pool: &mut VoicePool,
+    bus: &mut MasterBus,
     stats: &EngineStatsShared,
     mix_l: &mut [f32],
     mix_r: &mut [f32],
@@ -83,7 +90,7 @@ pub fn dispatch_and_render(
     let frames = frames as usize;
     let mut pos = 0usize;
     loop {
-        let next = apply_due(consumer, base, buffer_end, pos, pool, stats).unwrap_or(frames);
+        let next = apply_due(consumer, base, buffer_end, pos, pool, bus, stats).unwrap_or(frames);
         let seg_end = next.min(frames);
         pool.render_segment(mix_l, mix_r, pos, seg_end);
         pos = seg_end;
@@ -119,9 +126,10 @@ mod tests {
     }
 
     fn dispatch(c: &mut RingConsumer, base: u64, frames: u64, pool: &mut VoicePool, st: &EngineStatsShared) -> Vec<f32> {
+        let mut bus = crate::effects::MasterBus::new(SR);
         let mut l = vec![0.0; frames as usize];
         let mut r = vec![0.0; frames as usize];
-        dispatch_and_render(c, base, frames, pool, st, &mut l, &mut r);
+        dispatch_and_render(c, base, frames, pool, &mut bus, st, &mut l, &mut r);
         l
     }
 
@@ -178,9 +186,10 @@ mod tests {
         });
         dispatch(&mut c, base, 256, &mut pool, &st);
         // Render a long tail; the released voice frees.
+        let mut bus = crate::effects::MasterBus::new(SR);
         let mut l = vec![0.0; SR as usize];
         let mut r = vec![0.0; SR as usize];
-        dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &st, &mut l, &mut r);
+        dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &mut bus, &st, &mut l, &mut r);
         assert_eq!(pool.active_count(), 0, "held voice released by NoteOff then freed");
     }
 

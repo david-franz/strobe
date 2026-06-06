@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+use crate::effects::MasterBus;
 use crate::error::AudioError;
 use crate::ring::RingConsumer;
 use crate::scheduler;
@@ -68,18 +69,21 @@ pub struct AudioState {
     pub frame_clock: Arc<AtomicU64>,
     pub consumer: RingConsumer,
     pub pool: VoicePool,
+    pub bus: MasterBus,
     pub stats: Arc<EngineStatsShared>,
     mix_l: Vec<f32>,
     mix_r: Vec<f32>,
 }
 
 impl AudioState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         channels: usize,
         sample_rate: f32,
         frame_clock: Arc<AtomicU64>,
         consumer: RingConsumer,
         pool: VoicePool,
+        bus: MasterBus,
         stats: Arc<EngineStatsShared>,
     ) -> Self {
         Self {
@@ -88,6 +92,7 @@ impl AudioState {
             frame_clock,
             consumer,
             pool,
+            bus,
             stats,
             mix_l: vec![0.0; MAX_BUFFER],
             mix_r: vec![0.0; MAX_BUFFER],
@@ -140,10 +145,14 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
         base,
         frames as u64,
         &mut st.pool,
+        &mut st.bus,
         &st.stats,
         &mut st.mix_l[..frames],
         &mut st.mix_r[..frames],
     );
+
+    // Master bus + look-ahead limiter: the final stage before the device.
+    st.bus.process(&mut st.mix_l[..frames], &mut st.mix_r[..frames]);
 
     // Interleave to the device: stereo on ch 0/1, mono = (L+R)/2, extra channels silent.
     for f in 0..frames {
@@ -188,6 +197,7 @@ mod tests {
             Arc::new(AtomicU64::new(0)),
             consumer,
             pool,
+            MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
         );
         (st, producer)
@@ -257,6 +267,7 @@ mod tests {
             frame_clock.clone(),
             consumer,
             pool,
+            MasterBus::new(cfg.sample_rate as f32),
             Arc::new(EngineStatsShared::default()),
         );
         let stream = build_stream(&device, &config, st).expect("build");

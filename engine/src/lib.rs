@@ -8,6 +8,7 @@
 //! pre-allocated voice pool with stealing.
 
 pub mod audio_io;
+pub mod effects;
 pub mod envelope;
 pub mod error;
 pub mod event;
@@ -110,12 +111,14 @@ impl Engine {
         let consumer = self.consumer.take().expect("consumer available before start");
         let (device, config, cfg) = audio_io::open_output(sr, bf)?;
         let pool = VoicePool::new(&self.registry, cfg.sample_rate as f32, SLOTS_PER_INSTRUMENT);
+        let bus = effects::MasterBus::new(cfg.sample_rate as f32);
         let state = AudioState::new(
             cfg.channels as usize,
             cfg.sample_rate as f32,
             self.frame_clock.clone(),
             consumer,
             pool,
+            bus,
             self.stats.clone(),
         );
         let stream = audio_io::build_stream(&device, &config, state)?;
