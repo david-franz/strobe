@@ -15,7 +15,6 @@ import {
   queryArc,
   spanCycles,
   cyclePos,
-  sameTime,
   hasOnset,
   type Hap,
 } from "./pattern";
@@ -165,23 +164,28 @@ export const iter = <T>(n: number, p: Pat<T>): Pat<T> =>
     }),
   );
 
-/** Apply `fn` to a different 1/n slice of the cycle each cycle (rotating fills). */
+/** Apply `fn` to `p` only within the `[lo, hi)` slice of each cycle; outside the slice `p`
+ *  plays unchanged. Each hap is placed by its onset. (Tidal's `within`.) */
+const within = <T>(lo: number, hi: number, fn: (p: Pat<T>) => Pat<T>, p: Pat<T>): Pat<T> => {
+  const inSlice = (h: Hap<T>) => {
+    const pos = cyclePos(h.whole ? h.whole.begin : h.part.begin);
+    return pos >= lo - 1e-9 && pos < hi - 1e-9;
+  };
+  return stack(
+    pattern((span) => fn(p).query(span).filter(inSlice)),
+    pattern((span) => p.query(span).filter((h) => !inSlice(h))),
+  );
+};
+
+/** Apply `fn` to a different 1/n slice of the cycle each cycle (rotating fills). Restricting
+ *  `fn` to the active slice (rather than positionally re-matching haps) means time-shifting
+ *  transforms — `rev`, `fast`, `off`, … — work correctly instead of silently no-op'ing. */
 export const chunk = <T>(n: number, fn: (p: Pat<T>) => Pat<T>, p: Pat<T>): Pat<T> =>
   splitQueries(
     pattern((span) => {
       const cyc = Math.floor(span.begin);
       const k = ((cyc % n) + n) % n;
-      const lo = k / n;
-      const hi = (k + 1) / n;
-      const inSlice = (h: Hap<T>) => {
-        const pos = cyclePos(h.part.begin);
-        return pos >= lo - 1e-9 && pos < hi - 1e-9;
-      };
-      const base = p.query(span);
-      const transformed = fn(p).query(span);
-      return base.map((h) =>
-        inSlice(h) ? transformed.find((t) => sameTime(t.part.begin, h.part.begin)) ?? h : h,
-      );
+      return within(k / n, (k + 1) / n, fn, p).query(span);
     }),
   );
 

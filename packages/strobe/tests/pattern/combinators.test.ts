@@ -5,6 +5,7 @@ import {
   rev,
   every,
   iter,
+  chunk,
   off,
   fastcat,
   slowcat,
@@ -22,6 +23,14 @@ const onsetValues = (haps: { whole?: { begin: number } | undefined; part: { begi
     .map((h) => h.value);
 
 describe("combinators", () => {
+  it("chunk applies a time-shifting transform within the active slice", () => {
+    // Regression: positional hap-matching made chunk a no-op for any time-shifting fn.
+    const p = fastcat(pure("a"), pure("b")); // "a b"
+    const c = chunk(2, (x) => fast(2, x), p);
+    // Cycle 0: the first half is fast(2)'d (an extra onset at 0.25); the second half is untouched.
+    expect(onsetValues(queryArc(c, 0, 1))).toEqual(["a", "b", "b"]);
+  });
+
   it("fast(2) doubles within the cycle", () => {
     expect(queryArc(fast(2, pure("x")), 0, 1).map((h) => h.whole)).toEqual([
       { begin: 0, end: 0.5 },
