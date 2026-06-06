@@ -7,7 +7,7 @@
 
 import type { Engine } from "./engine";
 import type { Clock } from "./clock";
-import { getTrack } from "./tracks";
+import { activeTracks } from "./tracks";
 import { queryArc, type Hap } from "./pattern";
 import { resolveNote } from "./presets";
 
@@ -113,9 +113,9 @@ export class Scheduler {
     const begin = Math.max(this.scheduledUntilCycle, nowCycle); // never backfill the past
     if (windowEnd <= begin) return;
 
-    const pattern = getTrack(1); // Phase 0: single slot p1
     let n = 0;
-    if (pattern) {
+    // Query every active track; the track id is stamped into each event.
+    for (const { id, pattern } of activeTracks()) {
       const haps: Hap<unknown>[] = queryArc(pattern, begin, windowEnd);
       for (const h of haps) {
         if (n >= MAX_EVENTS_PER_TICK) break;
@@ -128,7 +128,7 @@ export class Scheduler {
         const durFrames = h.whole ? clock.cyclesToFrames(h.whole.end - h.whole.begin) : 0;
         // The hap value selects the instrument (preset name or id), pitch and velocity.
         const { instrument, freq, vel } = resolveNote(h.value);
-        writeNoteOn(this.view, n, 1, frame, this.voiceCtr++, freq, vel, durFrames, instrument, this.seq++);
+        writeNoteOn(this.view, n, id, frame, this.voiceCtr++, freq, vel, durFrames, instrument, this.seq++);
         n++;
       }
     }

@@ -8,7 +8,8 @@
 // parser in Phase 2; Phase 0 uses the bdEvery/bdEuclid stand-ins.
 
 export { setcps, setbpm } from "./clock-singleton";
-export { p1 } from "./tracks";
+export { p1, p2, p3, p4, p5, p6, p7, p8 } from "./tracks";
+export { seq, every, euclid } from "./patterns";
 export { bdEvery, bdEuclid } from "./pattern";
 export type { Pattern, Hap, TimeSpan, SoundValue } from "./pattern";
 export { PRESETS, resolveNote } from "./presets";

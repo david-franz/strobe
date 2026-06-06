@@ -1,28 +1,39 @@
-// Named track slots. Phase 0 has one slot (p1). Assigning a slot is a plain variable
-// write — cheap and atomic from JS's perspective (architecture.md "Tracks and
-// hot-swapping"); the scheduler reads the current pattern on its next query.
-//
-// Feature 05 introduces the slot store + getTrack the scheduler reads; feature 06
-// adds the public `p1` live-coding entry point on top of setTrack.
+// Named track slots p1..pN. Phase 0 had one slot; Phase 1 supports several so a song can
+// layer a kick, hats, snare and a bassline at once. Assigning a slot is a plain variable
+// write; the scheduler queries every active slot each tick (architecture.md "Tracks").
 
 import type { Pattern } from "./pattern";
 
-// index 1 = p1; index 0 reserved for master/global.
-const slots: (Pattern<unknown> | null)[] = [null, null];
+const MAX_TRACKS = 8;
+// index 0 reserved for master/global; 1..MAX_TRACKS = p1..pN.
+const slots: (Pattern<unknown> | null)[] = Array(MAX_TRACKS + 1).fill(null);
 
-/** Assign the pattern for a track id (the primitive `p1` is built on this in 06). */
 export function setTrack(id: number, pattern: Pattern<unknown> | null): void {
-  slots[id] = pattern;
+  if (id >= 1 && id <= MAX_TRACKS) slots[id] = pattern;
 }
 
-/** Scheduler reads the current pattern for a track id. */
 export function getTrack(id: number): Pattern<unknown> | null {
   return slots[id] ?? null;
 }
 
-/** Assign p1's pattern — the live-coding entry point. Re-running `p1(...)` swaps the
- *  slot; the scheduler picks up the new pattern on its next query (the runtime aligns
- *  the visible effect to the next cycle boundary). */
-export function p1(pattern: Pattern<unknown>): void {
-  setTrack(1, pattern);
+/** Every assigned track, in id order — what the scheduler iterates. */
+export function activeTracks(): { id: number; pattern: Pattern<unknown> }[] {
+  const out: { id: number; pattern: Pattern<unknown> }[] = [];
+  for (let id = 1; id <= MAX_TRACKS; id++) {
+    const pattern = slots[id];
+    if (pattern) out.push({ id, pattern });
+  }
+  return out;
 }
+
+const assign = (id: number) => (pattern: Pattern<unknown>): void => setTrack(id, pattern);
+
+/** The live-coding entry points: re-running `pN(...)` swaps that track's pattern. */
+export const p1 = assign(1);
+export const p2 = assign(2);
+export const p3 = assign(3);
+export const p4 = assign(4);
+export const p5 = assign(5);
+export const p6 = assign(6);
+export const p7 = assign(7);
+export const p8 = assign(8);

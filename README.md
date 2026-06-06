@@ -76,10 +76,13 @@ strobe/
 
 Early development. Building from a working spine outward:
 
-- **Phase 0 — proof of spine** *(in progress)*: Rust engine makes sound, TS hot-swaps a kick loop with zero dropout.
-- Phases 1–6: synthesis core → pattern language → effects rack → sampling → live-coding DX → web backend.
+- ✅ **Phase 0 — proof of spine**: Rust engine makes sound; TS hot-swaps a kick loop at the cycle boundary with zero dropout. Lock-free SPSC event ring, look-ahead scheduler, napi bridge. → [`examples/phase0-kick.ts`](examples/phase0-kick.ts) (`pnpm demo`)
+- ✅ **Phase 1 — synthesis core**: a real instrument layer — band-limited oscillators (sine/saw/square/tri/noise/wavetable), a resonant state-variable filter (LP/HP/BP/notch), amp + filter ADSR envelopes, a configurable subtractive **synth voice**, a synthesized **drum kit** (bd/sn/cp/hh/oh with hat choke), **polyphony** with oldest/quietest voice-stealing (16+ voices), and a transparent master **look-ahead limiter**. → [`examples/phase1-kit.ts`](examples/phase1-kit.ts) (`pnpm demo:phase1`)
+- ⬜ Phases 2–6: pattern language → effects rack → sampling → live-coding DX → web backend.
 
-See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+> The README quickstart above shows the *target* `sound(...)`/`note(...)` pattern API, which lands with the mini-notation parser in **Phase 2**. Today you drive the engine with the Phase 1 builders (`every`, `euclid`, `seq`, preset names, `noteToHz`) — see the example.
+
+Engine: 72 Rust tests; library: 45 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p packages/strobe/tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "demo": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase0-kick.ts'))\""
+    "demo": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase0-kick.ts'))\"",
+    "demo:phase1": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase1-kit.ts'))\""
   },
   "dependencies": {
     "strobe": "workspace:*"
