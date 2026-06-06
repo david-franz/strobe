@@ -98,7 +98,7 @@ Early development. Building from a working spine outward:
 
 > The README quickstart above now runs as written (`pnpm demo:phase2`). `room`/`sidechain` and audio-rate filter ramps are parsed and compiled today but become audible with the **Phase 3** effects rack.
 
-Engine: 72 Rust tests; library: 99 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+Engine: 79 Rust tests; library: 98 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 
