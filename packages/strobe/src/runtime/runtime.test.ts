@@ -1,72 +1,15 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import type { Engine } from "../backend/engine";
-import { Clock } from "../clock/clock";
-import { nextBoundaryDelayMs, swapAtCycleBoundary, loadSongSafely } from "./runtime";
-import { p1, getTrack, promotePending, clearAllTracks } from "./tracks";
+import { describe, it, expect, beforeEach } from "vitest";
+import { loadSongSafely } from "./runtime";
+import { p1, getTrack, clearAllTracks } from "./tracks";
 import { bdEvery } from "../pattern/builders";
 
-function fakeEngine() {
-  let currentFrame = 0;
-  const engine: Engine = {
-    start: async () => {},
-    stop: async () => {},
-    pushEvents: () => {},
-    stats: () => ({ currentFrame, underruns: 0, lateEvents: 0, ringFullness: 0 }),
-  };
-  return { engine, setFrame: (f: number) => (currentFrame = f) };
-}
-
-afterEach(() => vi.useRealTimers());
 beforeEach(() => clearAllTracks());
 
-describe("nextBoundaryDelayMs", () => {
-  it("waits a full cycle from a boundary", () => {
-    expect(nextBoundaryDelayMs(0, 1)).toBe(1000);
-  });
-  it("waits the remainder mid-cycle, scaled by tempo", () => {
-    expect(nextBoundaryDelayMs(0.5, 2)).toBe(250); // half cycle left, 2 cyc/s
-    expect(nextBoundaryDelayMs(0.25, 1)).toBe(750);
-  });
-  it("is near-zero just before a boundary", () => {
-    expect(nextBoundaryDelayMs(3.999, 1)).toBeCloseTo(1, 5);
-  });
-});
-
-describe("swapAtCycleBoundary", () => {
-  it("defers the swap until the boundary, then stages it for promotion", async () => {
-    vi.useFakeTimers();
-    const { engine, setFrame } = fakeEngine();
-    const clock = new Clock(engine);
-    clock.cps = 1;
-    clock.anchor(48000); // epochFrame = 0
-    setFrame(12000); // nowCycle = 0.25
-
-    const before = bdEvery(4);
-    p1(before);
-    expect(getTrack(1)).toBe(before);
-
-    const done = swapAtCycleBoundary(clock, async () => {
-      p1(bdEvery(8)); // re-assignment → staged
-    });
-
-    // Not yet applied — still waiting for the boundary timer.
-    expect(getTrack(1)).toBe(before);
-
-    await vi.advanceTimersByTimeAsync(nextBoundaryDelayMs(0.25, 1)); // 750 ms
-    await done;
-
-    // The re-assignment is staged; `current` is unchanged until the scheduler promotes it.
-    expect(getTrack(1)).toBe(before);
-    promotePending(99); // the scheduler does this at the next cycle boundary
-    expect(getTrack(1)).not.toBe(before);
-  });
-});
-
 describe("loadSongSafely", () => {
-  it("never rejects on a bad/missing song (keeps the last good pattern)", async () => {
+  it("never rejects on a bad/missing song and keeps the last good pattern", async () => {
     p1(bdEvery(4));
     const kept = getTrack(1);
     await expect(loadSongSafely("/nonexistent/strobe-song-does-not-exist.ts")).resolves.toBeUndefined();
-    expect(getTrack(1)).toBe(kept); // unchanged — engine keeps playing
+    expect(getTrack(1)).toBe(kept); // unchanged — the engine keeps playing
   });
 });

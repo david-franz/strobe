@@ -1,7 +1,8 @@
 // The hot-reload runtime: the long-lived process that wires the engine, clock, and
-// scheduler together, loads a song file, and re-evaluates it on save — applying the
-// swap at the next cycle boundary so the music never jumps mid-bar
-// (docs/plan/phase-0/07-hot-reload-demo.md).
+// scheduler together, loads a song file, and re-evaluates it on save. The cycle-boundary
+// swap is owned by the track registry (assign stages → the scheduler promotes at the next
+// integer cycle), so a save re-evaluates *immediately* and the change lands on the very
+// next boundary — no extra deferral, and no dropped saves.
 
 import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -9,6 +10,7 @@ import { createNativeEngine } from "../backend/engine";
 import { Clock } from "../clock/clock";
 import { Scheduler } from "./scheduler";
 import { setActiveClock } from "../clock/singleton";
+import { beginReload, endReload, abortReload } from "./tracks";
 
 export interface PlayOpts {
   sampleRate?: number;
@@ -19,17 +21,6 @@ export interface RunningSong {
   stop(): Promise<void>;
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/** Milliseconds until the next integer cycle boundary from `nowCycle` at tempo `cps`.
- *  At an exact boundary this returns a full cycle (worst case is a one-cycle delay,
- *  never a glitch). */
-export function nextBoundaryDelayMs(nowCycle: number, cps: number): number {
-  const nextBoundary = Math.floor(nowCycle) + 1;
-  const secsUntil = (nextBoundary - nowCycle) / cps;
-  return Math.max(0, secsUntil * 1000);
-}
-
 /** Re-import a song with a cache-busting URL so its top-level code (setcps/p1) runs
  *  again. Without the `?v=` query the cached ESM module would not re-execute. */
 export async function evalSong(songPath: string): Promise<void> {
@@ -37,23 +28,18 @@ export async function evalSong(songPath: string): Promise<void> {
   await import(url);
 }
 
-/** Import the song, keeping the last good pattern if it throws (a truncated save or a
- *  syntax/type error never stops the engine — you hear no dropout while you fix it). */
+/** Re-evaluate the song, tracking which tracks it (re)assigns so dropped tracks are
+ *  silenced. A truncated save or a syntax/type error keeps the last good patterns (the
+ *  engine never stops, so you hear no dropout while you fix it). */
 export async function loadSongSafely(songPath: string): Promise<void> {
+  beginReload();
   try {
     await evalSong(songPath);
+    endReload(); // success → reap tracks this revision didn't reassign
   } catch (err) {
+    abortReload(); // failure → keep every track as-is
     process.stderr.write(`\n[strobe] song error (keeping last good pattern): ${String(err)}\n`);
   }
-}
-
-/** Defer `apply` (which reassigns p1) until the next cycle boundary so the swap lands
- *  exactly on a downbeat — click-free. The coarse wait need not be precise: it only
- *  governs when a variable is reassigned; the scheduler still stamps the first new
- *  event with its exact frame. */
-export async function swapAtCycleBoundary(clock: Clock, apply: () => Promise<void>): Promise<void> {
-  await sleep(nextBoundaryDelayMs(clock.nowCycle(), clock.cps));
-  await apply();
 }
 
 /** Boot the engine, start the scheduler, load `songPath`, and hot-reload it on save. */
@@ -69,17 +55,18 @@ export async function play(songPath: string, opts: PlayOpts = {}): Promise<Runni
   const scheduler = new Scheduler(engine, clock);
   scheduler.start();
 
-  await loadSongSafely(songPath); // first load → populates p1 immediately
+  await loadSongSafely(songPath); // first load → populates the tracks immediately
 
-  // Watch + hot-reload, swapping at the next cycle boundary. The `reloading` guard
-  // coalesces the multiple watch events some editors fire per save.
-  let reloading = false;
+  // Watch + hot-reload. Debounce coalesces the multiple events editors fire per save (and
+  // skips mid-write truncated reads); the latest save always wins and none are dropped.
+  // Re-eval is immediate — the registry stages the swap for the next cycle boundary.
+  let debounce: ReturnType<typeof setTimeout> | null = null;
   const watcher = watch(songPath, () => {
-    if (reloading) return;
-    reloading = true;
-    void swapAtCycleBoundary(clock, () => loadSongSafely(songPath)).finally(() => {
-      reloading = false;
-    });
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      debounce = null;
+      void loadSongSafely(songPath);
+    }, 50);
   });
 
   // Telemetry for the verification recipe.
@@ -92,6 +79,7 @@ export async function play(songPath: string, opts: PlayOpts = {}): Promise<Runni
 
   return {
     stop: async () => {
+      if (debounce) clearTimeout(debounce);
       clearInterval(statsTimer);
       watcher.close();
       scheduler.stop();

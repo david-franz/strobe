@@ -8,6 +8,9 @@ import {
   setSoloed,
   hush,
   clearAllTracks,
+  beginReload,
+  endReload,
+  abortReload,
   p1,
 } from "./tracks";
 import { setActiveClock } from "../clock/singleton";
@@ -80,5 +83,34 @@ describe("track registry & hot-swap", () => {
     p1(sound("bd"));
     assign(3, sound("sn"));
     expect(activeTracks().map((t) => t.id).sort()).toEqual([1, 3]);
+  });
+
+  it("a reload silences tracks the new revision drops", () => {
+    setActiveClock(clockAt(12000)); // cycle 0.25
+    p1(sound("bd*4"));
+    assign(2, sound("hh"));
+
+    // Reload: the revision reassigns only track 1.
+    beginReload();
+    assign(1, sound("bd*8"));
+    endReload();
+
+    promotePending(1); // next boundary
+    expect(queryArc(getTrack(1) as Parameters<typeof queryArc>[0], 0, 1).length).toBeGreaterThan(0);
+    expect(queryArc(getTrack(2) as Parameters<typeof queryArc>[0], 0, 1)).toEqual([]); // dropped → silence
+  });
+
+  it("an aborted reload (song threw) keeps every track", () => {
+    setActiveClock(clockAt(12000));
+    p1(sound("bd*4"));
+    assign(2, sound("hh"));
+    const kept2 = getTrack(2);
+
+    beginReload();
+    assign(1, sound("bd*8")); // got partway, then "threw"
+    abortReload();
+
+    promotePending(99);
+    expect(getTrack(2)).toBe(kept2); // untouched — not silenced
   });
 });

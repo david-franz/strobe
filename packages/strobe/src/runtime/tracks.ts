@@ -22,6 +22,11 @@ interface TrackSlot {
 const MAX_TRACKS = 8;
 const slots = new Map<number, TrackSlot>();
 
+// During a song reload we record which tracks the new revision (re)assigned, so any track
+// the revision dropped can be silenced (the file is the source of truth). null = not
+// reloading.
+let touched: Set<number> | null = null;
+
 function slot(id: number): TrackSlot {
   let s = slots.get(id);
   if (!s) {
@@ -36,6 +41,7 @@ function slot(id: number): TrackSlot {
  *  the next cycle boundary, so the committed window is never rewritten. */
 export function assign(id: number, pat: AnyPat): void {
   if (id < 1 || id > MAX_TRACKS) return;
+  touched?.add(id);
   const s = slot(id);
   if (s.current === null) {
     s.current = pat;
@@ -99,6 +105,33 @@ export function hush(): void {
 /** Clear the whole registry (used by tests). */
 export function clearAllTracks(): void {
   slots.clear();
+  touched = null;
+}
+
+/** Begin tracking which tracks a song revision (re)assigns, so dropped tracks can be
+ *  silenced when the revision finishes. */
+export function beginReload(): void {
+  touched = new Set();
+}
+
+/** Finish a successful reload: stage `silence` (at the next cycle boundary) on any track
+ *  the revision did not reassign — i.e. a track removed from the song stops playing. */
+export function endReload(): void {
+  if (!touched) return;
+  const seen = touched;
+  touched = null;
+  for (const s of slots.values()) {
+    if (s.current && s.current !== silence && !seen.has(s.id)) {
+      s.pending = silence;
+      s.pendingFromCycle = Math.ceil(currentCycle() + 1e-9);
+    }
+  }
+}
+
+/** Abandon a reload (the revision threw mid-evaluation): keep every track as-is so a
+ *  half-run song never silences the tracks it didn't reach. */
+export function abortReload(): void {
+  touched = null;
 }
 
 const assignTo = (id: number) => (pat: AnyPat): void => assign(id, pat);
