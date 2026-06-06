@@ -189,7 +189,7 @@ export class Scheduler {
 
     const { id: instrument, drum } = resolveInstrument(cm);
     const velSrc = cm.gain ?? (cm as Record<string, unknown>).vel ?? 0.9;
-    const vel = num(velSrc, hap.part.begin);
+    const vel = Math.min(1, Math.max(0, num(velSrc, hap.part.begin))); // velocity is 0..1
     const freq =
       cm.freq != null ? num(cm.freq, hap.part.begin) : cm.note != null ? noteToFreq(cm.note) : 0;
 
