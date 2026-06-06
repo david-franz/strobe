@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 cpal = "0.15"
 bytemuck = { version = "1", features = ["derive"] }
+fundsp = "0.18"

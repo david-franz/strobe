@@ -177,24 +177,25 @@ mod tests {
     #[test]
     fn channel_fan_out_is_centered() {
         let mut st = state(2);
-        st.kick.force_constant(0.5);
-        let mut buf = vec![0.0f32; 64 * 2];
+        st.kick.trigger_at(0, 55.0, 1.0, 0.0);
+        let mut buf = vec![0.0f32; 256 * 2];
         render(&mut st, &mut buf);
-        // Every even (L) and odd (R) index carries the same mono sample.
-        for f in 0..64 {
-            assert_eq!(buf[f * 2], 0.5, "left channel frame {f}");
-            assert_eq!(buf[f * 2 + 1], 0.5, "right channel frame {f}");
+        // Mono is fanned to both channels: every L equals its R.
+        for f in 0..256 {
+            assert_eq!(buf[f * 2], buf[f * 2 + 1], "L==R at frame {f}");
         }
+        // The voice actually produced sound.
+        assert!(buf.iter().any(|&s| s.abs() > 1e-6));
     }
 
     #[test]
     fn mono_device_renders() {
         let mut st = state(1);
-        st.kick.force_constant(0.25);
-        let mut buf = vec![0.0f32; 32];
+        st.kick.trigger_at(0, 55.0, 1.0, 0.0);
+        let mut buf = vec![0.0f32; 256];
         render(&mut st, &mut buf);
-        assert!(buf.iter().all(|&s| s == 0.25));
-        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 32);
+        assert!(buf.iter().any(|&s| s.abs() > 1e-6), "voice produced signal");
+        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 256);
     }
 
     #[test]
