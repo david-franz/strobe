@@ -23,6 +23,24 @@ export class Clock {
     this.epochCycle = 0; // cycle 0 is "now" at start
   }
 
+  /** Set tempo directly (TidalCycles `setcps`), re-anchoring so the cycle position
+   *  is continuous across the change (a live tempo edit never teleports the groove). */
+  setcps(x: number): void {
+    const nowFrame = this.engine.stats().currentFrame;
+    this.epochCycle = this.nowCycle(); // freeze current position (at the old cps)
+    this.epochFrame = nowFrame;
+    this.cps = x;
+  }
+
+  /** BPM helper: at 4 beats/cycle, bpm = cps*4*60. */
+  get bpm(): number {
+    return this.cps * 4 * 60;
+  }
+
+  setbpm(bpm: number): void {
+    this.setcps(bpm / 60 / 4);
+  }
+
   /** Current cycle-time, derived from the engine's sample clock (source of truth). */
   nowCycle(): number {
     const frame = this.engine.stats().currentFrame;

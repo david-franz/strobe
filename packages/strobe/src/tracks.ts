@@ -19,3 +19,10 @@ export function setTrack(id: number, pattern: Pattern<unknown> | null): void {
 export function getTrack(id: number): Pattern<unknown> | null {
   return slots[id] ?? null;
 }
+
+/** Assign p1's pattern — the live-coding entry point. Re-running `p1(...)` swaps the
+ *  slot; the scheduler picks up the new pattern on its next query (the runtime aligns
+ *  the visible effect to the next cycle boundary). */
+export function p1(pattern: Pattern<unknown>): void {
+  setTrack(1, pattern);
+}
