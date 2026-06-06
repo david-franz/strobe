@@ -19,7 +19,7 @@ All time math reuses the `withTime`/`splitQueries`/`filterHaps`/`filterOnsets` p
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   combinators.ts     # all combinators (functions) + the chainable mixin
   rng.ts             # deterministic, cycle-seeded RNG (shared by chance combinators)
   combinators.test.ts

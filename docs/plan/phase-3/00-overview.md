@@ -109,7 +109,7 @@ engine/src/
   graph.rs            # build effect fundsp graphs from EffectConfig (extended)
 ```
 
-TS side (`packages/tekno/`) gains the chainable effect methods (`.lpf()`/`.hpf()` as *track*
+TS side (`packages/strobe/`) gains the chainable effect methods (`.lpf()`/`.hpf()` as *track*
 effects, `.delay()`, `.room()`, `.crush()`, `.dist()`, `.chorus()`, `.flanger()`, `.phaser()`,
 `.comp()`, `.sidechain("p1")`, …), the per-track-chain-vs-send routing in `PARAM_REGISTRY`, and the
 `TrackFx` param-id packing. The pattern/automation machinery is already present from

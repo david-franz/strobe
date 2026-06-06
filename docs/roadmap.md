@@ -9,7 +9,7 @@ The build order is **spine first, then breadth**. Phase 0 proves the whole archi
 **Scope**
 - `engine/`: a `cpal` output stream; a minimal render loop; one synthesized kick voice; the SPSC ring buffer + the `frame`-stamped event consumer.
 - `bindings/native/`: a `napi-rs` addon exposing `start()`, `stop()`, `pushEvents()`, `stats()`.
-- `packages/tekno/`: the look-ahead scheduler, a cps clock, one track slot, and a trivial "play this every 1/4 cycle" pattern.
+- `packages/strobe/`: the look-ahead scheduler, a cps clock, one track slot, and a trivial "play this every 1/4 cycle" pattern.
 - `examples/phase0-kick.ts`: a four-on-the-floor kick read from a file the runtime watches.
 
 **Done when**
@@ -84,15 +84,15 @@ The build order is **spine first, then breadth**. Phase 0 proves the whole archi
 
 **Scope**
 - `runtime.ts`: a REPL and a file-watcher that hot-reloads a song file, re-evaluating only changed tracks and swapping them at cycle boundaries.
-- A small CLI (`tekno play song.ts`, `tekno repl`, `tekno render`, `tekno bounce`, `tekno devices`).
-- **Recording:** a deterministic **session** capture (tee the realized event stream + instruments + sample buffers to a `.teknosession` bundle, re-renderable offline) and real-time **audio capture** of the master mix plus **per-track stems** (lock-free taps → writer thread, no audio-thread I/O). Re-render and live capture share one set of master/stem sinks; recording adds two control calls (`startCapture`/`stopCapture`) but no event opcodes.
+- A small CLI (`strobe play song.ts`, `strobe repl`, `strobe render`, `strobe bounce`, `strobe devices`).
+- **Recording:** a deterministic **session** capture (tee the realized event stream + instruments + sample buffers to a `.strobesession` bundle, re-renderable offline) and real-time **audio capture** of the master mix plus **per-track stems** (lock-free taps → writer thread, no audio-thread I/O). Re-render and live capture share one set of master/stem sinks; recording adds two control calls (`startCapture`/`stopCapture`) but no event opcodes.
 - Example songs (techno loop with sidechain; hip-hop beat with a chopped sample; evolving filter-sweep pad).
 - Getting-started docs (written last, once the features exist); bootstrap that ships a prebuilt engine binary and checks for `yt-dlp`/`ffmpeg`.
 
 **Done when**
-- `tekno play song.ts` runs; saving the file updates the music live with no restart.
+- `strobe play song.ts` runs; saving the file updates the music live with no restart.
 - A new user can install with `npm i`, no Rust toolchain required (prebuilt addon).
-- `tekno play song.ts --rec takes/ --stems` captures a live session to `master.wav` + per-track stems with no underruns; a `--session` recording re-renders deterministically via `tekno bounce` to byte-identical master + stems.
+- `strobe play song.ts --rec takes/ --stems` captures a live session to `master.wav` + per-track stems with no underruns; a `--session` recording re-renders deterministically via `strobe bounce` to byte-identical master + stems.
 
 ## Phase 6 — Web backend *(later)*
 

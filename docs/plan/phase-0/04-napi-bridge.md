@@ -19,7 +19,7 @@ bindings/native/
   *.node                 # generated platform binary
 engine/
   src/lib.rs             # (01/02/03) the pure-Rust Engine this wraps
-packages/tekno/
+packages/strobe/
   src/engine.ts          # NEW — Engine interface + loads the .node addon
 ```
 
@@ -34,7 +34,7 @@ This document owns `bindings/native/**`. The engine logic it wraps is defined in
 ```toml
 # bindings/native/Cargo.toml
 [package]
-name = "tekno-native"
+name = "strobe-native"
 edition = "2021"
 
 [lib]
@@ -57,9 +57,9 @@ fn main() { napi_build::setup(); }
 ```jsonc
 // bindings/native/package.json (excerpt)
 {
-  "name": "@tekno/native",
+  "name": "@strobe/native",
   "main": "index.js",
-  "napi": { "name": "tekno-native" },
+  "napi": { "name": "strobe-native" },
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform"
@@ -159,10 +159,10 @@ impl Engine {
 
 ### The TS engine interface
 
-`packages/tekno/src/engine.ts` declares the interface the rest of the library targets and loads the addon:
+`packages/strobe/src/engine.ts` declares the interface the rest of the library targets and loads the addon:
 
 ```ts
-// packages/tekno/src/engine.ts
+// packages/strobe/src/engine.ts
 export interface EngineStats {
   currentFrame: number;   // engine frame counter (source of truth)
   underruns: number;
@@ -178,7 +178,7 @@ export interface Engine {
 }
 
 // Native backend: thin wrapper over the napi addon.
-import { Engine as NativeEngine } from "@tekno/native"; // generated index.d.ts
+import { Engine as NativeEngine } from "@strobe/native"; // generated index.d.ts
 
 export function createNativeEngine(): Engine {
   const e = new NativeEngine();

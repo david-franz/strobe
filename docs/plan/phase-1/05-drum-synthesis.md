@@ -15,7 +15,7 @@ beat can be reshaped while it plays. These map to `sound("bd sn hh cp")`.
 engine/src/voices/drum.rs   # DrumKind, per-drum graphs, DrumVoice (new)
 engine/src/graph.rs         # build_drum_voice(DrumConfig) (extended)
 engine/src/voices/mod.rs    # Voice trait impl for DrumVoice (new)
-packages/tekno/src/drums.ts # sound() name → drum instrument mapping + params (new)
+packages/strobe/src/drums.ts # sound() name → drum instrument mapping + params (new)
 ```
 
 Pooled/triggered by [06-voice-allocation.md](06-voice-allocation.md); summed in
@@ -151,7 +151,7 @@ plays.
 ### `DrumConfig` (the `defineInstrument()` payload)
 
 ```ts
-// packages/tekno/src/drums.ts
+// packages/strobe/src/drums.ts
 export interface DrumConfig {
   type: "drum";
   kind: "bd"|"sn"|"cp"|"hh"|"oh";

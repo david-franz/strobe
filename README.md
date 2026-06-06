@@ -1,11 +1,11 @@
-# tekno
+# strobe
 
 **Write techno and hip-hop as code — live, with no compile step.**
 
-`tekno` is a programmable music library. You start from a raw frequency or a drum click, sculpt it with every effect a producer expects, pull in short samples (including from YouTube), stretch and chop them, and layer loops by changing patterns and effects *while the sound is playing*. It is aimed at software engineers who want more flexibility and speed than a traditional DAW gives you.
+`strobe` is a programmable music library. You start from a raw frequency or a drum click, sculpt it with every effect a producer expects, pull in short samples (including from YouTube), stretch and chop them, and layer loops by changing patterns and effects *while the sound is playing*. It is aimed at software engineers who want more flexibility and speed than a traditional DAW gives you.
 
 ```ts
-import { setcps, p1, p2, p3, sound, note, sine } from "tekno";
+import { setcps, p1, p2, p3, sound, note, sine } from "strobe";
 
 setcps(130 / 60 / 4);                       // ~130 BPM, 4 beats per cycle
 
@@ -21,9 +21,9 @@ Edit any line, save, and the change takes effect at the next cycle boundary — 
 
 ---
 
-## Why tekno
+## Why strobe
 
-This is the *live coding* / algorithmic-music space — the world of [TidalCycles](https://tidalcycles.org/), [Strudel](https://strudel.cc/), [SuperCollider](https://supercollider.github.io/), and [Sonic Pi](https://sonic-pi.net/). `tekno` borrows the proven ideas from that world and packages them for engineers:
+This is the *live coding* / algorithmic-music space — the world of [TidalCycles](https://tidalcycles.org/), [Strudel](https://strudel.cc/), [SuperCollider](https://supercollider.github.io/), and [Sonic Pi](https://sonic-pi.net/). `strobe` borrows the proven ideas from that world and packages them for engineers:
 
 - **A language you already know.** Songs are TypeScript. Interpreted, hot-reloadable, with full editor tooling and type checking.
 - **A pattern model that scales.** Declarative patterns and a concise mini-notation (`"bd ~ sn bd"`), transformed by pure functions (`fast`, `every`, `jux`, `degrade`, …). Borrowed directly from TidalCycles because it is proven.
@@ -62,12 +62,12 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 ## Project layout
 
 ```text
-tekno/
+strobe/
   engine/            # Rust audio core (cpal, fundsp, symphonia, ssstretch)
   bindings/
     native/          # napi-rs → .node addon (owns the cpal audio thread)
     web/             # wasm-bindgen → WASM + AudioWorklet (later)
-  packages/tekno/    # the TypeScript library you write songs in
+  packages/strobe/    # the TypeScript library you write songs in
   examples/          # runnable songs
   docs/              # architecture & design docs
 ```

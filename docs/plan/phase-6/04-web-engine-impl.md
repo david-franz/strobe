@@ -1,4 +1,4 @@
-# Phase 6.04 — The web `Engine` implementation (`packages/tekno/src/engine.web.ts`)
+# Phase 6.04 — The web `Engine` implementation (`packages/strobe/src/engine.web.ts`)
 
 ## Purpose
 
@@ -9,7 +9,7 @@ The guiding invariant: **everything above this interface is byte-for-byte the sa
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   engine.ts            # (Phase 0) the Engine interface + createNativeEngine; ADD createEngine() selector
   engine.web.ts        # NEW — class WebEngine implements Engine (wires 01/02/03)
   web/
@@ -30,7 +30,7 @@ This document owns `engine.web.ts`, `web/sample-load.ts`, the `createEngine()` s
 ### `WebEngine implements Engine`
 
 ```ts
-// packages/tekno/src/engine.ts  (the shared contract — unchanged from Phase 0, plus loadSample)
+// packages/strobe/src/engine.ts  (the shared contract — unchanged from Phase 0, plus loadSample)
 export interface Engine {
   start(opts?: { sampleRate?: number; bufferFrames?: number }): Promise<void>;
   stop(): Promise<void>;
@@ -41,14 +41,14 @@ export interface Engine {
 ```
 
 ```ts
-// packages/tekno/src/engine.web.ts
+// packages/strobe/src/engine.web.ts
 import { startAudioHost, AudioHost } from "./web/audio-host.js";          // [02]
 import { SabRingProducer, PostMessageProducer, ringByteLength } from "./web/sab-ring.js"; // [03]
 import { decodeToPcm } from "./web/sample-load.js";
 
 export interface WebEngineOpts {
-  wasmUrl: string;       // pkg/tekno_web_bg.wasm
-  workletUrl: string;    // worklet/tekno-processor.js
+  wasmUrl: string;       // pkg/strobe_web_bg.wasm
+  workletUrl: string;    // worklet/strobe-processor.js
   ringCapacity?: number; // records; default sized > one lookahead window
   channels?: number;     // default 2
 }
@@ -109,10 +109,10 @@ The scheduler calls `engine.pushEvents(buffer)` once per ~25 ms tick and reads `
 
 ### Backend selection at runtime
 
-`packages/tekno` picks the backend without song code knowing which one:
+`packages/strobe` picks the backend without song code knowing which one:
 
 ```ts
-// packages/tekno/src/engine.ts
+// packages/strobe/src/engine.ts
 export function createEngine(opts?: { web?: WebEngineOpts }): Engine {
   const isBrowser = typeof window !== "undefined" && typeof AudioContext !== "undefined";
   if (isBrowser) {
@@ -123,14 +123,14 @@ export function createEngine(opts?: { web?: WebEngineOpts }): Engine {
 }
 ```
 
-> Detection is environment-based (`window`/`AudioContext` ⇒ browser ⇒ web backend; otherwise Node ⇒ native). The song file calls neither directly — the runtime ([phase-5](../phase-5/00-overview.md), and the future click-to-code frontend) calls `createEngine()` and hands the result to the scheduler. **The song imports `setcps`, `p1`, `sound`, `note`, `sine` from `tekno` and never mentions a backend.**
+> Detection is environment-based (`window`/`AudioContext` ⇒ browser ⇒ web backend; otherwise Node ⇒ native). The song file calls neither directly — the runtime ([phase-5](../phase-5/00-overview.md), and the future click-to-code frontend) calls `createEngine()` and hands the result to the scheduler. **The song imports `setcps`, `p1`, `sound`, `note`, `sine` from `strobe` and never mentions a backend.**
 
 ### `loadSample` in the browser: fetch + decode on the main thread
 
 The audio thread cannot `fetch` or decode ([02](02-audioworklet-host.md)), so sample ingest is a **main-thread, non-real-time** path that produces `Float32Array` PCM and then calls the same `loadSample(pcm, channels, sampleRate)` the native engine exposes ([event-protocol.md](../../event-protocol.md#control-call-surface-non-real-time)).
 
 ```ts
-// packages/tekno/src/web/sample-load.ts
+// packages/strobe/src/web/sample-load.ts
 export async function decodeToPcm(url: string, ctx: AudioContext): Promise<{
   pcm: Float32Array; channels: number; sampleRate: number;
 }> {
@@ -157,7 +157,7 @@ The decoded interleaved `Float32Array` matches exactly what `Engine.loadSample` 
 
 ```ts
 // examples/web/song.ts  — byte-for-byte the README quickstart; NO web-specific code
-import { setcps, p1, p2, p3, sound, note, sine } from "tekno";
+import { setcps, p1, p2, p3, sound, note, sine } from "strobe";
 setcps(130 / 60 / 4);
 p1( sound("bd*4").gain(0.9) );
 p2( sound("~ hh ~ hh").lpf(6000) );
@@ -171,10 +171,10 @@ p3( note("c2 c2 eb2 g2").saw()
 <!-- examples/web/index.html -->
 <button id="start">click to start</button>
 <script type="module">
-  import { createEngine, attachScheduler } from "tekno";        // runtime glue
+  import { createEngine, attachScheduler } from "strobe";        // runtime glue
   document.getElementById("start").onclick = async () => {       // user gesture → autoplay [02]
-    const engine = createEngine({ web: { wasmUrl: "/pkg/tekno_web_bg.wasm",
-                                         workletUrl: "/worklet/tekno-processor.js" } });
+    const engine = createEngine({ web: { wasmUrl: "/pkg/strobe_web_bg.wasm",
+                                         workletUrl: "/worklet/strobe-processor.js" } });
     await engine.start();
     attachScheduler(engine);          // the SAME scheduler the native runtime uses
     await import("./song.ts");        // run the unchanged quickstart
@@ -213,7 +213,7 @@ res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
 - **Memory growth on `loadSample`.** Uploading PCM may grow WASM memory; doing so on the audio thread is forbidden. *Guardrail:* `loadSample` runs between quanta on the main thread; the worklet re-creates its memory view after a grow ([02](02-audioworklet-host.md)).
 - **Backend mis-selection.** A bundler that defines `window` in Node, or SSR, could misroute. *Guardrail:* selection also checks `AudioContext`; allow an explicit override.
 - **No SAB (fallback active).** Higher jitter via `postMessage`. *Guardrail:* the lookahead absorbs it (still ahead of time → glitch-free); recommend COOP/COEP for the SAB fast path; `stats()` still reports underruns so regressions are visible.
-- **Song code accidentally importing a backend.** Would break the "no song code changes" guarantee. *Guardrail:* a lint/test asserts `examples/web/song.ts` imports **only** from `tekno`'s public song API and is identical to the README snippet.
+- **Song code accidentally importing a backend.** Would break the "no song code changes" guarantee. *Guardrail:* a lint/test asserts `examples/web/song.ts` imports **only** from `strobe`'s public song API and is identical to the README snippet.
 
 ## Acceptance criteria
 

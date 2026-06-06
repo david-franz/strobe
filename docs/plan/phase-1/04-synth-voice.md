@@ -15,7 +15,7 @@ fundsp graph a `NoteOn` instantiates and triggers, and it is what the song API l
 engine/src/voices/synth.rs   # SynthVoice: the graph + trigger/release/render (new)
 engine/src/graph.rs          # build_synth_voice(InstrumentConfig) → fundsp graph (extended)
 engine/src/voices/mod.rs     # Voice trait impl for SynthVoice (new)
-packages/tekno/src/synth.ts  # chainable modifiers + InstrumentConfig shape (new)
+packages/strobe/src/synth.ts  # chainable modifiers + InstrumentConfig shape (new)
 ```
 
 Instantiated/pooled by the voice allocator ([06-voice-allocation.md](06-voice-allocation.md));
@@ -108,7 +108,7 @@ Sent once over the **control-call channel** (not the hot event path), per
 instrument id that subsequent `NoteOn`s reference in **`arg3`**.
 
 ```ts
-// packages/tekno/src/synth.ts
+// packages/strobe/src/synth.ts
 export interface InstrumentConfig {
   type: "synth";
   osc: { kind: "sine"|"saw"|"square"|"triangle"|"noise"|"wavetable";

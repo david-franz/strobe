@@ -1,4 +1,4 @@
-# Phase 6.03 — The SharedArrayBuffer event ring (`packages/tekno/src/web/sab-ring.ts`)
+# Phase 6.03 — The SharedArrayBuffer event ring (`packages/strobe/src/web/sab-ring.ts`)
 
 ## Purpose
 
@@ -13,7 +13,7 @@ Using a `SharedArrayBuffer` across threads requires the page to be **cross-origi
 ## Location
 
 ```
-packages/tekno/src/web/
+packages/strobe/src/web/
   sab-ring.ts          # NEW — SAB allocation, layout, Atomics producer, fallback producer
   sab-ring.test.ts     # NEW — round-trip + wrap + full + concurrency tests
   ring-layout.ts       # NEW — shared offsets/constants (REC=32, header layout) used by 01/04 too
@@ -42,7 +42,7 @@ SharedArrayBuffer
 ```
 
 ```ts
-// packages/tekno/src/web/ring-layout.ts
+// packages/strobe/src/web/ring-layout.ts
 export const REC = 32;                          // bytes per record — SAME as native/event-protocol
 export const HEADER_U32 = 16;                   // 16 u32 slots of header (room to spare)
 export const HEADER_BYTES = HEADER_U32 * 4;
@@ -62,7 +62,7 @@ The header doubles as the **stats channel**: the worklet writes `currentFrame`/`
 The producer is the scheduler's `pushEvents`: it writes N×32-byte records starting at `tail`, then publishes the new `tail` with a release store. The **record encoding is byte-for-byte the `DataView` writer from [event-protocol.md](../../event-protocol.md#encoding-in-typescript)** — only the destination is the SAB.
 
 ```ts
-// packages/tekno/src/web/sab-ring.ts
+// packages/strobe/src/web/sab-ring.ts
 export class SabRingProducer {
   private head32: Int32Array;     // Atomics view over header
   private bytes: Uint8Array;      // raw bytes for record region

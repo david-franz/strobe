@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The design docs under `docs/` ([architecture](../../architecture.md), [pattern-model](../../pattern-model.md), [event-protocol](../../event-protocol.md), [roadmap](../../roadmap.md)) explain how `tekno` is *built*. They are not what a person reaches for when they want to *write a song*. Phase 5 adds the missing **user-facing** layer: a getting-started path that takes someone from `npm i` to a kick playing in under five minutes, plus concise reference sheets for the three things they'll consult constantly — mini-notation, the chain API, and the combinators — and the practical guides (sampling, troubleshooting) that the design docs deliberately keep out of scope.
+The design docs under `docs/` ([architecture](../../architecture.md), [pattern-model](../../pattern-model.md), [event-protocol](../../event-protocol.md), [roadmap](../../roadmap.md)) explain how `strobe` is *built*. They are not what a person reaches for when they want to *write a song*. Phase 5 adds the missing **user-facing** layer: a getting-started path that takes someone from `npm i` to a kick playing in under five minutes, plus concise reference sheets for the three things they'll consult constantly — mini-notation, the chain API, and the combinators — and the practical guides (sampling, troubleshooting) that the design docs deliberately keep out of scope.
 
 These docs are the on-ramp the [example songs](03-example-songs.md) and the [CLI](02-cli.md) assume. They never restate or contradict the canonical model; they *teach* it and link back to it. (The README quickstart is the trailhead; these guides are the trail.)
 
@@ -35,9 +35,9 @@ A one-screen landing page: a "Start here → install → first song" path for ne
 
 ### `install.md` — get it running
 
-- **Install:** `npm i tekno` (or `npm i -g tekno` for the global `tekno` CLI). The headline: **no Rust toolchain** — the engine ships as a [prebuilt per-OS binary](04-packaging-prebuilts.md). Lists the supported platforms (macOS x64/arm64, Linux x64/arm64, Windows x64).
+- **Install:** `npm i strobe` (or `npm i -g strobe` for the global `strobe` CLI). The headline: **no Rust toolchain** — the engine ships as a [prebuilt per-OS binary](04-packaging-prebuilts.md). Lists the supported platforms (macOS x64/arm64, Linux x64/arm64, Windows x64).
 - **Optional extras:** `yt-dlp` + `ffmpeg`, needed **only** for YouTube sampling, with per-OS one-line install hints and a pointer to the [legal note](#samplingmd--load-chop-stretch). Stated plainly: you don't need these to play or to use local samples.
-- **Verify:** `tekno devices` (you should see your output) and `tekno play examples/hello-kick.ts` (you should hear a kick). If not → [troubleshooting](#troubleshootingmd--when-the-sound-is-wrong).
+- **Verify:** `strobe devices` (you should see your output) and `strobe play examples/hello-kick.ts` (you should hear a kick). If not → [troubleshooting](#troubleshootingmd--when-the-sound-is-wrong).
 
 ### `first-song.md` — from zero to a beat
 
@@ -46,7 +46,7 @@ A guided build of [`hello-kick.ts`](03-example-songs.md#hello-kickts--the-first-
 1. Imports and `setcps(130/60/4)` — what a cycle is and how tempo maps to it (link to [architecture: the clock](../../architecture.md#the-clock-and-musical-time)).
 2. `p1( sound("bd*4") )` — what a track is, what the mini-notation means.
 3. `.gain(0.9)` — the chain API: attaching *how it sounds* (link to [pattern-model: chaining](../../pattern-model.md#the-chaining-api-where-it-feels-like-an-instrument)).
-4. **The payoff:** run `tekno play`, edit `bd*4` → `bd(3,8)`, save, hear it swap at the next bar with no restart — the live-coding loop, which is the whole point ([architecture: tracks & hot-swapping](../../architecture.md#tracks-and-hot-swapping)).
+4. **The payoff:** run `strobe play`, edit `bd*4` → `bd(3,8)`, save, hear it swap at the next bar with no restart — the live-coding loop, which is the whole point ([architecture: tracks & hot-swapping](../../architecture.md#tracks-and-hot-swapping)).
 5. "Where to go next": add a hi-hat (`p2`), then a bassline (`p3`) — graduating into [`techno-sidechain.ts`](03-example-songs.md#techno-sidechaints--the-pump).
 
 ### `mini-notation.md` — the cheat sheet
@@ -78,7 +78,7 @@ Continuous signals usable as parameter values: `sine`, `cosine`, `saw`, `isaw`, 
 
 ### `combinators.md` — the transform reference
 
-The combinator vocabulary, organized exactly as [pattern-model.md](../../pattern-model.md#combinators--transforming-patterns) groups them — Time, Structure & repetition, Layering, Density & chance — each as a function `Pattern → Pattern` available standalone and as a chain method, with a one-line example. It ends with the [pattern-model "evolving pattern"](../../pattern-model.md#combinators--transforming-patterns) example annotated line-by-line (`.every(4, rev).off(0.125, …).jux(rev)`), and a note that combinators are pure functions you can test with `queryArc` ([pattern-model: testing](../../pattern-model.md#testing-patterns)) — handy at the `tekno repl` prompt.
+The combinator vocabulary, organized exactly as [pattern-model.md](../../pattern-model.md#combinators--transforming-patterns) groups them — Time, Structure & repetition, Layering, Density & chance — each as a function `Pattern → Pattern` available standalone and as a chain method, with a one-line example. It ends with the [pattern-model "evolving pattern"](../../pattern-model.md#combinators--transforming-patterns) example annotated line-by-line (`.every(4, rev).off(0.125, …).jux(rev)`), and a note that combinators are pure functions you can test with `queryArc` ([pattern-model: testing](../../pattern-model.md#testing-patterns)) — handy at the `strobe repl` prompt.
 
 ### `sampling.md` — load, chop, stretch (+ the YouTube legal note)
 
@@ -94,7 +94,7 @@ A symptom → cause → fix table covering the failure modes the design already 
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| No sound at all | Wrong output device | `tekno devices`, then `--device "<name>"` ([02](02-cli.md)) |
+| No sound at all | Wrong output device | `strobe devices`, then `--device "<name>"` ([02](02-cli.md)) |
 | Clicks / dropouts | Buffer too small for the machine | raise `--buffer` (e.g. 512), then `--lookahead 150` ([architecture](../../architecture.md#what-can-go-wrong-and-the-guardrails)) |
 | Feels laggy when editing | Lookahead too long | lower `--lookahead` toward 100/80, watching for underruns |
 | Underruns under load | Audio thread starved | larger buffer/lookahead; close other audio apps; check `stats()` line |
@@ -116,7 +116,7 @@ Each row links to the relevant Phase 5 feature so the fix is one click away.
 
 - **Docs drifting from the API.** The chain-API and combinator references list real exported symbols; a CI check (the same one used for [example fidelity](03-example-songs.md#acceptance-criteria)) cross-references the docs' symbol tables against the package's exports, failing the build if a method is documented that doesn't exist (or vice-versa for the core set).
 - **The legal note must stay prominent.** The YouTube caveat is a required, non-collapsible callout in `sampling.md` (and echoed in `install.md`'s optional-extras section), worded identically to [roadmap.md](../../roadmap.md#risks) and the [README](../../../README.md). A lint check asserts the callout's presence so it can't be edited away.
-- **Cross-platform instructions.** Install hints, device selection, and the `tekno` command shim differ per OS; each how-to gives macOS/Linux/Windows variants (matching the [packaging matrix](04-packaging-prebuilts.md#targets-the-build-matrix)).
+- **Cross-platform instructions.** Install hints, device selection, and the `strobe` command shim differ per OS; each how-to gives macOS/Linux/Windows variants (matching the [packaging matrix](04-packaging-prebuilts.md#targets-the-build-matrix)).
 - **Scope creep into design docs.** The guides deliberately do **not** re-explain the two-plane architecture or the event protocol; they link to them. This keeps one source of truth and avoids contradicting the LOCKED design.
 - **Examples in docs must run.** All runnable snippets are extracted from the actual [example files](03-example-songs.md) or unit-tested via `queryArc`, so a copy-pasted doc snippet always works.
 
@@ -127,4 +127,4 @@ Each row links to the relevant Phase 5 feature so the fix is one click away.
 - [ ] **No drift from canon.** Every API symbol named in the guides exists in the package exports and matches [pattern-model.md](../../pattern-model.md); no guide contradicts a design doc. *How to test:* the cross-reference check + a link-checker over all `docs/guide/*.md` relative links.
 - [ ] **YouTube legal note present and prominent.** `sampling.md` and `install.md` carry the copyright/ToS callout, worded as in [roadmap.md](../../roadmap.md#risks). *How to test:* a lint assertion for the callout text.
 - [ ] **Troubleshooting maps to real fixes.** Every fix references a real CLI flag/command or feature doc. *How to test:* link-checker + manual review that each `--flag` exists in [02](02-cli.md).
-- [ ] **All snippets run.** Every runnable code block executes (via `tekno play`/`tekno repl`/`queryArc`) without error. *How to test:* a doc-snippet test harness that extracts fenced `ts` blocks marked runnable and evaluates them.
+- [ ] **All snippets run.** Every runnable code block executes (via `strobe play`/`strobe repl`/`queryArc`) without error. *How to test:* a doc-snippet test harness that extracts fenced `ts` blocks marked runnable and evaluates them.

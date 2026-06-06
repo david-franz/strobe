@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`tekno render` ([02](02-cli.md)) bounces a **static** song file: it renders the code exactly as it sits, for N cycles, to one master WAV. But a live-coded performance is not a static file — it *changes as you type*. Muting `p2`, sweeping a filter by hand, swapping `p3`'s pattern halfway through: none of that is in the file at the end. **Session recording captures the performance itself** — the realized stream of events over wall-clock time — so the whole take, with every live change in place, can be replayed and re-rendered to pristine audio (master + per-track stems) at any time.
+`strobe render` ([02](02-cli.md)) bounces a **static** song file: it renders the code exactly as it sits, for N cycles, to one master WAV. But a live-coded performance is not a static file — it *changes as you type*. Muting `p2`, sweeping a filter by hand, swapping `p3`'s pattern halfway through: none of that is in the file at the end. **Session recording captures the performance itself** — the realized stream of events over wall-clock time — so the whole take, with every live change in place, can be replayed and re-rendered to pristine audio (master + per-track stems) at any time.
 
 The key enabling fact, from [architecture.md](../../architecture.md) and [event-protocol.md](../../event-protocol.md): the engine is **deterministic**. Its output is a pure function of `(sampleRate, instrument configs, sample buffers, the ordered/timestamped event stream)`. The scheduler already encodes every musical moment into 32-byte event records before calling `pushEvents` — so to record a performance we simply **tee that same byte stream to disk**, alongside the instrument definitions and sample buffers it references. Because we log the *realized* events (not the source code or RNG seeds), re-rendering is exactly reproducible regardless of any randomness in the patterns — the dice have already been rolled and written down.
 
@@ -11,12 +11,12 @@ This is the deterministic, lossless capture path. Its companion, [06 · Audio ca
 ## Location
 
 ```
-packages/tekno/src/record/
-  session.ts        # SessionRecorder — tees pushEvents + control ops to a .teknosession bundle
+packages/strobe/src/record/
+  session.ts        # SessionRecorder — tees pushEvents + control ops to a .strobesession bundle
   replay.ts         # SessionPlayer — drives the engine (offline) from a recorded bundle
-  format.ts         # the .teknosession bundle layout + (de)serialization
+  format.ts         # the .strobesession bundle layout + (de)serialization
 cli/
-  bounce.ts         # NEW `tekno bounce` command → re-render a session to master + stems
+  bounce.ts         # NEW `strobe bounce` command → re-render a session to master + stems
 ```
 
 No engine (Rust) changes are required for *capture* — it is entirely a control-plane tee. Re-render reuses the offline engine mode from [02-cli.md `render`](02-cli.md) plus the stem sinks from [06](06-audio-capture-stems.md).
@@ -25,10 +25,10 @@ No engine (Rust) changes are required for *capture* — it is entirely a control
 
 ### What a session is
 
-A `.teknosession` is a **directory bundle** (a folder, optionally zipped) so that everything needed to reproduce the take is self-contained — crucially the **sample buffers**, which must not depend on an external file or a YouTube cache that may later vanish.
+A `.strobesession` is a **directory bundle** (a folder, optionally zipped) so that everything needed to reproduce the take is self-contained — crucially the **sample buffers**, which must not depend on an external file or a YouTube cache that may later vanish.
 
 ```
-my-set.teknosession/
+my-set.strobesession/
   meta.json            # sampleRate, engine/protocol version, start time, duration (frames), track names
   instruments.json     # every InstrumentConfig registered during the take (id → config)
   samples/
@@ -77,7 +77,7 @@ Wiring point: the runtime ([01](01-hot-reload-runtime.md)) and scheduler ([Phase
 
 ### Re-render: deterministic offline bounce
 
-`tekno bounce my-set.teknosession out/ [--stems]` reproduces the take:
+`strobe bounce my-set.strobesession out/ [--stems]` reproduces the take:
 
 ```ts
 // replay.ts
@@ -115,9 +115,9 @@ Because this runs the **same** Rust render loop as live playback — just with t
 
 ## Acceptance criteria
 
-- **A live-coded session round-trips.** Record a ≥2-minute performance with live edits (mute/unmute tracks, hand-sweep a filter, swap a pattern). `tekno bounce set.teknosession out/` reproduces audio matching what was heard (sample-for-sample for synth/sample-only material; verified by null-test against a simultaneous real-time capture from [06](06-audio-capture-stems.md), within capture jitter).
-- **Stems come out of a session.** `tekno bounce set.teknosession out/ --stems` writes `out/master.wav` plus `out/stems/p1.wav…` — *the channel loops kept in place* — all sample-aligned (see [06](06-audio-capture-stems.md)).
-- **Self-contained & portable.** The `.teknosession` bundle re-renders correctly on a different machine with the original source files absent (samples travel inside the bundle).
+- **A live-coded session round-trips.** Record a ≥2-minute performance with live edits (mute/unmute tracks, hand-sweep a filter, swap a pattern). `strobe bounce set.strobesession out/` reproduces audio matching what was heard (sample-for-sample for synth/sample-only material; verified by null-test against a simultaneous real-time capture from [06](06-audio-capture-stems.md), within capture jitter).
+- **Stems come out of a session.** `strobe bounce set.strobesession out/ --stems` writes `out/master.wav` plus `out/stems/p1.wav…` — *the channel loops kept in place* — all sample-aligned (see [06](06-audio-capture-stems.md)).
+- **Self-contained & portable.** The `.strobesession` bundle re-renders correctly on a different machine with the original source files absent (samples travel inside the bundle).
 - **Deterministic.** Bouncing the same session twice yields byte-identical master and stems.
 - **Faster than real time, dropout-free.** A 2-minute session bounces in well under 2 minutes with `stats()` reporting zero overruns; tested on macOS, then Linux/Windows in CI.
 - **Tee correctness (unit).** `SessionRecorder` forwards every call to the underlying engine unchanged while appending — asserted by a mock engine that records the calls it receives and comparing against the journal.

@@ -44,12 +44,12 @@ The bridge interface, the 32-byte record, the `Pattern`/`Hap`/`TimeSpan` shape, 
 
 Phase 6 is **done** when both of the following hold:
 
-- **The README quickstart song plays unchanged in a browser tab.** The exact snippet from [README.md](../../../README.md) — `setcps(130/60/4)`, `p1(sound("bd*4").gain(0.9))`, `p2(sound("~ hh ~ hh").lpf(6000))`, `p3(note("c2 c2 eb2 g2").saw().lpf(sine.range(300,1200).slow(8)).room(0.3).sidechain("p1"))` — runs **byte-for-byte identical song code** against `createWebEngine()` and produces the intended sound in a browser. Not a port: the same `packages/tekno` modules, the same scheduler, selecting the web backend at runtime ([04](04-web-engine-impl.md)).
+- **The README quickstart song plays unchanged in a browser tab.** The exact snippet from [README.md](../../../README.md) — `setcps(130/60/4)`, `p1(sound("bd*4").gain(0.9))`, `p2(sound("~ hh ~ hh").lpf(6000))`, `p3(note("c2 c2 eb2 g2").saw().lpf(sine.range(300,1200).slow(8)).room(0.3).sidechain("p1"))` — runs **byte-for-byte identical song code** against `createWebEngine()` and produces the intended sound in a browser. Not a port: the same `packages/strobe` modules, the same scheduler, selecting the web backend at runtime ([04](04-web-engine-impl.md)).
 - **Editing patterns live in the browser hot-swaps with no dropout.** Re-running a track in the browser (REPL / editor) swaps it **at the next cycle boundary** with **no clicks or dropouts** — the same seamless hot-swap the native backend gives ([architecture.md](../../architecture.md#tracks-and-hot-swapping)), now driven through the `SharedArrayBuffer` ring into the worklet.
 
 ### Cross-cutting (every phase, from [roadmap.md](../../roadmap.md#cross-cutting-definition-of-done-every-phase))
 
-- A runnable example exercises the capability: a static-served `examples/web/` page that loads `packages/tekno`, selects the web backend, and plays the quickstart on a user gesture.
+- A runnable example exercises the capability: a static-served `examples/web/` page that loads `packages/strobe`, selects the web backend, and plays the quickstart on a user gesture.
 - No audio underruns under the example's normal load — `stats()` (now read from worklet-written atomics; see [03](03-sharedarraybuffer-ring.md)/[04](04-web-engine-impl.md)) reports zero underruns and zero late events.
 - The pure-TS logic added here (the SAB ring producer, the backend selector, the parity harness) has unit tests; the WASM render path is golden/null-tested against the native render of the same event stream.
 - Validated on macOS (Chrome/Firefox first, where cross-origin isolation + AudioWorklet are well supported); other browsers confirmed before sign-off.

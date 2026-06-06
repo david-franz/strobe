@@ -1,6 +1,6 @@
 # 05 — YouTube ingest
 
-> **Legal / ToS / copyright — read first.** Downloading audio from YouTube can conflict with **YouTube's Terms of Service** and with **copyright**. `tekno` therefore keeps this path **opt-in and clearly documented**, **never the headline feature** ([roadmap.md#risks](../../roadmap.md#risks)). **Local files and microphone input are the always-safe paths** and are the primary, recommended way to sample. Treat any sampled material as you would in any production: clear it or transform it appropriately. This feature exists because grabbing a few seconds of a record is the practical reality of hip-hop sampling; it is built to be used responsibly, in short grabs, with the caveat surfaced to the user.
+> **Legal / ToS / copyright — read first.** Downloading audio from YouTube can conflict with **YouTube's Terms of Service** and with **copyright**. `strobe` therefore keeps this path **opt-in and clearly documented**, **never the headline feature** ([roadmap.md#risks](../../roadmap.md#risks)). **Local files and microphone input are the always-safe paths** and are the primary, recommended way to sample. Treat any sampled material as you would in any production: clear it or transform it appropriately. This feature exists because grabbing a few seconds of a record is the practical reality of hip-hop sampling; it is built to be used responsibly, in short grabs, with the caveat surfaced to the user.
 
 ## Purpose
 
@@ -18,7 +18,7 @@ p1( vox.chop(8).rev() );
 ## Location
 
 ```
-packages/tekno/
+packages/strobe/
   src/
     sample/
       youtube.ts      # NEW — sample.fromYouTube(), dependency checks, shell pipeline
@@ -26,14 +26,14 @@ packages/tekno/
       cache.ts        # NEW — disk cache layout + (url,start,dur) hashing
 ```
 
-This document owns `packages/tekno/src/sample/youtube.ts` and `packages/tekno/src/sample/cache.ts`. It produces no Rust code and no new opcode — it ends by calling the existing `loadSample` control call ([event-protocol.md](../../event-protocol.md#control-call-surface-non-real-time)).
+This document owns `packages/strobe/src/sample/youtube.ts` and `packages/strobe/src/sample/cache.ts`. It produces no Rust code and no new opcode — it ends by calling the existing `loadSample` control call ([event-protocol.md](../../event-protocol.md#control-call-surface-non-real-time)).
 
 ## Design
 
 ### Signature
 
 ```ts
-// packages/tekno/src/sample/youtube.ts
+// packages/strobe/src/sample/youtube.ts
 export interface YouTubeGrabOpts {
   start?: number;      // seconds into the source to begin (default 0)
   dur?: number;        // seconds to keep (default 8; hard-capped, see maxDurSec)
@@ -95,7 +95,7 @@ async function ensureDeps(): Promise<void> {
   if (!(await hasBinary("yt-dlp")))  missing.push("yt-dlp");
   if (!(await hasBinary("ffmpeg")))  missing.push("ffmpeg");
   if (missing.length) {
-    throw new TeknoError(
+    throw new StrobeError(
       `YouTube sampling needs ${missing.join(" and ")} on your PATH.\n` +
       `  install:  brew install ${missing.join(" ")}   # macOS\n` +
       `            (or see https://github.com/yt-dlp/yt-dlp + https://ffmpeg.org)\n` +
@@ -112,9 +112,9 @@ To make "opt-in" real rather than just documented, the first YouTube grab in a p
 
 ```ts
 // One-time, per-process (or persisted in config): the user must opt in.
-//   import { enableYouTubeSampling } from "tekno";
+//   import { enableYouTubeSampling } from "strobe";
 //   enableYouTubeSampling({ iUnderstandToS: true });
-// If not enabled, fromYouTube throws a TeknoError pointing at the docs and the
+// If not enabled, fromYouTube throws a StrobeError pointing at the docs and the
 // always-safe local-file / mic alternatives.
 ```
 
@@ -125,7 +125,7 @@ This keeps local files and the mic as the frictionless default and puts a delibe
 Grabs are deterministic in `(url, start, dur)` and expensive (a network fetch + transcode), so they are cached. Re-running a song line during live coding hits the cache, not the network — fast and avoids hammering YouTube.
 
 ```ts
-// packages/tekno/src/sample/cache.ts
+// packages/strobe/src/sample/cache.ts
 import { createHash } from "node:crypto";
 
 export function grabKey(url: string, start: number, dur: number): string {
@@ -137,10 +137,10 @@ export function grabKey(url: string, start: number, dur: number): string {
 }
 ```
 
-**Cache layout** (under an OS cache dir, e.g. `~/.cache/tekno/youtube/` / `%LOCALAPPDATA%/tekno/...`):
+**Cache layout** (under an OS cache dir, e.g. `~/.cache/strobe/youtube/` / `%LOCALAPPDATA%/strobe/...`):
 
 ```
-~/.cache/tekno/youtube/
+~/.cache/strobe/youtube/
   <hash>.wav          # the trimmed, engine-rate, f32 PCM — what loadFile reads
   <hash>.json         # metadata: { url, start, dur, sampleRate, channels, frames,
                       #             createdAt, ytDlpVersion, title? } for inspection/GC
@@ -148,7 +148,7 @@ export function grabKey(url: string, start: number, dur: number): string {
 
 - **Hit:** `<hash>.wav` exists and its `.json` matches → skip both CLIs, go straight to `loadFile`.
 - **Miss / `force`:** run the pipeline, write `<hash>.wav` + `<hash>.json` atomically (write to `*.tmp`, then rename).
-- **GC:** a size/age cap on the cache dir (LRU by `createdAt`/access), with a `tekno cache clear` CLI (Phase 5). Temp download files are always cleaned up, even on failure.
+- **GC:** a size/age cap on the cache dir (LRU by `createdAt`/access), with a `strobe cache clear` CLI (Phase 5). Temp download files are always cleaned up, even on failure.
 
 ### Where it runs (real-time safety)
 
@@ -169,7 +169,7 @@ Everything here is TS control-plane work on a worker: spawning CLIs, reading fil
 - **Command injection.** URLs and options are passed as **array args to `spawn`**, never interpolated into a shell string; the URL is validated/canonicalized first.
 - **Real-time safety.** All work is on a worker; the only engine interaction is the non-real-time `loadSample`. A pending grab leaves the pattern silent, never stalling the scheduler or the audio thread.
 - **Long downloads / huge sources.** `--no-playlist`, a `dur` hard cap (`maxDurSec`, default e.g. 30 s — the posture is *short* grabs), and `-t dur` keep the transcode tiny even if the source is long; the [01](01-sample-decode-loading.md) `maxDurationSec` guard is the backstop.
-- **Network/tool failure.** `yt-dlp`/`ffmpeg` non-zero exit → a friendly `TeknoError` with the captured stderr tail; temp files cleaned; the song keeps playing (the sample just never resolves). `yt-dlp` breaks when YouTube changes — the error suggests `yt-dlp -U`.
+- **Network/tool failure.** `yt-dlp`/`ffmpeg` non-zero exit → a friendly `StrobeError` with the captured stderr tail; temp files cleaned; the song keeps playing (the sample just never resolves). `yt-dlp` breaks when YouTube changes — the error suggests `yt-dlp -U`.
 - **Cache correctness.** Key includes the engine sample rate so a cached WAV always matches the running engine; atomic write-then-rename avoids half-written cache files; size/age GC bounds disk use.
 - **Determinism of `start`.** `-ss` before `-i` is a fast (keyframe-ish) seek; for sample-accurate trims we can put `-ss` *after* `-i` (slower, exact) — default to the fast seek, with an `exactSeek` option for when frame-accuracy matters.
 
@@ -177,9 +177,9 @@ Everything here is TS control-plane work on a worker: spawning CLIs, reading fil
 
 - [ ] **Produces a usable, cached, playable buffer (roadmap "done when").** *Integration test (network-gated / fixture):* `sample.fromYouTube(url, {start, dur})` returns a `SampleHandle` whose buffer is ~`dur` seconds at the engine rate and immediately plays via `TrigSample`; a second call with the same args is served from cache (no network) and returns the same content.
 - [ ] **Trimmed correctly.** *Unit/integration test:* the produced WAV is `dur` (±a frame) seconds, `engineSampleRate`, `pcm_f32le`, stereo; the audio corresponds to `[start, start+dur)` of the source (fixture-based).
-- [ ] **Dependency checks.** *Unit test:* with `yt-dlp`/`ffmpeg` absent from PATH, `fromYouTube` throws a clear `TeknoError` naming the missing tool, an install hint, and the local-file/mic alternative — *before* any spawn.
+- [ ] **Dependency checks.** *Unit test:* with `yt-dlp`/`ffmpeg` absent from PATH, `fromYouTube` throws a clear `StrobeError` naming the missing tool, an install hint, and the local-file/mic alternative — *before* any spawn.
 - [ ] **Opt-in enforced.** *Unit test:* without `enableYouTubeSampling(...)`, `fromYouTube` throws and does nothing on the network.
 - [ ] **Cache key + layout.** *Unit test:* `grabKey` is stable for the same `(url,start,dur,rate)` and differs when any changes; a hit skips both CLIs; writes are atomic (`*.tmp` → rename); temp downloads are removed on success and on failure.
 - [ ] **No injection / no shell string.** *Review + test:* CLIs are `spawn`ed with array args; a URL containing shell metacharacters cannot execute anything.
 - [ ] **Real-time safe / non-blocking.** *Integration test:* triggering a grab while a song plays does not block the scheduler or cause an underrun; the pattern stays silent until the handle resolves, then plays. (`stats()` clean — cross-cutting DoD, [roadmap.md](../../roadmap.md#cross-cutting-definition-of-done-every-phase).)
-- [ ] **Friendly failure.** *Unit test:* a `yt-dlp`/`ffmpeg` non-zero exit yields a `TeknoError` with the stderr tail and an update hint; the engine and song keep running.
+- [ ] **Friendly failure.** *Unit test:* a `yt-dlp`/`ffmpeg` non-zero exit yields a `StrobeError` with the stderr tail and an update hint; the engine and song keep running.

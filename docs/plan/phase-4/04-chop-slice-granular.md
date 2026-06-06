@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Loading and pitching a sample is the raw capability; **chopping it into a pattern** is what makes it hip-hop. This feature is the producer-facing edit layer — `packages/tekno/src/sample/edit.ts` plus the small engine support it needs — that turns one buffer into musical material:
+Loading and pitching a sample is the raw capability; **chopping it into a pattern** is what makes it hip-hop. This feature is the producer-facing edit layer — `packages/strobe/src/sample/edit.ts` plus the small engine support it needs — that turns one buffer into musical material:
 
 - **`.chop(n)`** — split a buffer into `n` equal slices and lay them out *in order across the cycle*, each slice triggerable as its own event (the classic "chop the break" move).
 - **`.slice(n, pattern)`** — split into `n` slices but let a *mini-notation pattern* choose which slice plays in each step (re-sequence the break: `"0 3 1 2"`).
@@ -14,7 +14,7 @@ The unifying idea: **a slice is just a `TrigSample` with a start offset and a re
 ## Location
 
 ```
-packages/tekno/
+packages/strobe/
   src/
     sample/
       edit.ts          # NEW — .chop/.slice/.loop/.grain + .begin/.end/.speed/.rev/.gain
@@ -27,7 +27,7 @@ engine/
     scheduler.rs       # routes grain triggers; chop/slice need no engine change
 ```
 
-This document owns `packages/tekno/src/sample/edit.ts` and `engine/src/voices/granular.rs`. Chop and slice are *entirely* TS; only granular adds engine code.
+This document owns `packages/strobe/src/sample/edit.ts` and `engine/src/voices/granular.rs`. Chop and slice are *entirely* TS; only granular adds engine code.
 
 ## Design
 
@@ -65,7 +65,7 @@ const speed       = c.rev ? c.speed : c.speed;     // direction is a flag, not s
 `chop(n)` produces a pattern of `n` events filling the cycle, the *k*-th carrying `begin = k/n`, `end = (k+1)/n`. It is a `fastcat` of `n` single-slice copies of the source:
 
 ```ts
-// packages/tekno/src/sample/edit.ts
+// packages/strobe/src/sample/edit.ts
 export function chop(pat: SamplePattern, n: number): SamplePattern {
   // For each Hap of the source, replace it with n sub-Haps that subdivide its
   // time span AND its [begin,end) region into n consecutive slices.
@@ -130,7 +130,7 @@ What the scheduler emits per cycle: **8 `TrigSample` events**, one per `Hap`. Fo
 Granular synthesis plays a **cloud of short overlapping grains** read from the buffer. It gives textures and a cheap pseudo-time-stretch: by holding the read position roughly fixed while spraying grains, you sustain a moment of the sample (a different aesthetic from the faithful Signalsmith stretch in [03](03-timestretch-pitchshift.md)).
 
 ```ts
-// packages/tekno/src/sample/edit.ts
+// packages/strobe/src/sample/edit.ts
 interface GrainOpts {
   size: number;       // grain length in ms (e.g. 50)
   density: number;    // grains per second (overlap = size_ms/1000 * density)

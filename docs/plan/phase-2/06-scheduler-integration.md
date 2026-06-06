@@ -9,7 +9,7 @@ The scheduler is where the pure pattern world meets the engine bridge. Crucially
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   scheduler.ts     # the tick loop, the Hap→events compiler, the encoder
   voices.ts        # voice-handle allocation (TS side; engine maps handle→physical voice)
   scheduler.test.ts

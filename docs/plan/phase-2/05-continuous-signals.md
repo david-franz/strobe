@@ -9,7 +9,7 @@ It also specifies the crucial decision the model implies but does not pin down: 
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   signals.ts       # sine, cosine, saw, isaw, tri, square, rand, perlin, .range
   signals.test.ts
 ```

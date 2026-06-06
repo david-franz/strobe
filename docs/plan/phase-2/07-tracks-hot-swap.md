@@ -9,7 +9,7 @@ Phase 0 had a single track slot ([phase-0/06-clock-and-tracks.md](../phase-0/06-
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   tracks.ts        # the registry, p1..pN, swap timing, hush/solo/mute
   tracks.test.ts
 ```
@@ -88,7 +88,7 @@ Because a window may straddle a boundary (e.g. `2.9 → 3.1`), `spanCycles` ([01
 
 ### Why purity makes this seamless
 
-A traditional sequencer stores the grid as state; editing it live mutates shared state that races with playback ([pattern-model.md](../../pattern-model.md#why-pure-functions-not-a-sequencer-object)). Tracks store **no playback state** — a slot is just a reference to a pure function. Swapping is pointing the reference at a new function; the in-flight committed window was produced by querying the *old* function and is already bytes in the ring buffer, wholly independent of the slot now. There is nothing to tear down, no notes to reconcile, no race. This is the property that makes `tekno` safe to edit while it plays.
+A traditional sequencer stores the grid as state; editing it live mutates shared state that races with playback ([pattern-model.md](../../pattern-model.md#why-pure-functions-not-a-sequencer-object)). Tracks store **no playback state** — a slot is just a reference to a pure function. Swapping is pointing the reference at a new function; the in-flight committed window was produced by querying the *old* function and is already bytes in the ring buffer, wholly independent of the slot now. There is nothing to tear down, no notes to reconcile, no race. This is the property that makes `strobe` safe to edit while it plays.
 
 ### Live helpers
 

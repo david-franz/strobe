@@ -89,7 +89,7 @@ engine/src/
   scheduler.rs      # dispatch NoteOn/NoteOff/ParamSet to voice_alloc (extended, Phase 0)
 ```
 
-TS side (`packages/tekno/`) gains the chainable synth/drum modifiers and the
+TS side (`packages/strobe/`) gains the chainable synth/drum modifiers and the
 `defineInstrument()` payload shape; the bulk of the pattern/chaining API lands in
 [Phase 2](../../roadmap.md#phase-2--pattern-language), so Phase 1 ships only the thin slice
 needed to drive these voices.

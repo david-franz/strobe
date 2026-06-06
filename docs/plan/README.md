@@ -1,6 +1,6 @@
 # Implementation plan
 
-This is the concrete, build-it-from-here plan for `tekno`. Each phase has one document **per feature**, detailed enough to implement without guessing. For the high-level rationale and acceptance gates, see [../roadmap.md](../roadmap.md); for the foundational design, see [../architecture.md](../architecture.md), [../pattern-model.md](../pattern-model.md), and [../event-protocol.md](../event-protocol.md).
+This is the concrete, build-it-from-here plan for `strobe`. Each phase has one document **per feature**, detailed enough to implement without guessing. For the high-level rationale and acceptance gates, see [../roadmap.md](../roadmap.md); for the foundational design, see [../architecture.md](../architecture.md), [../pattern-model.md](../pattern-model.md), and [../event-protocol.md](../event-protocol.md).
 
 **Build order is spine-first, then breadth.** Phase 0 proves the entire architecture end-to-end with the smallest possible system. Every later phase widens one layer of that proven spine. Do not start a phase until the prior phase's "done when" criteria pass.
 
@@ -65,7 +65,7 @@ Load, chop, stretch, and pitch audio — including short YouTube grabs. The hear
 Make it pleasant to actually perform and compose.
 
 - [01 · Hot-reload runtime](phase-5/01-hot-reload-runtime.md) — watch + re-eval only changed tracks
-- [02 · CLI](phase-5/02-cli.md) — `tekno play` / `repl` / `render` / `bounce` / `devices`
+- [02 · CLI](phase-5/02-cli.md) — `strobe play` / `repl` / `render` / `bounce` / `devices`
 - [03 · Example songs](phase-5/03-example-songs.md) — runnable techno/hip-hop/pad songs
 - [04 · Packaging & prebuilts](phase-5/04-packaging-prebuilts.md) — `npm i`, no Rust toolchain
 - [05 · Session recording](phase-5/05-session-recording.md) — capture a whole performance, re-render to stems

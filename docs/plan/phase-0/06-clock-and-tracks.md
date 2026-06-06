@@ -4,12 +4,12 @@
 
 The scheduler ([05-lookahead-scheduler.md](05-lookahead-scheduler.md)) needs three things to do its job: a way to know "what cycle-time is it now and how do cycles map to engine frames" (the **clock**), a place to read "what is the music" (the **track slot** `p1`), and a minimal notion of a **pattern** that, when queried over a span, yields the events to play. This feature provides all three at the smallest scale that proves the spine: the cps clock with its cycle↔wall-clock↔frame mapping, a single mutable track slot, and a trivial "play `bd` every 1/4 cycle" pattern.
 
-Time in `tekno` is **cycle-based** following TidalCycles ([architecture.md](../../architecture.md#the-clock-and-musical-time)): the unit is the *cycle*, tempo is *cycles per second* (`cps`), and `setcps(x)` sets it directly with the BPM helper `bpm = cps * 4 * 60`. The pattern shape here — `Pattern`, `Hap`, `TimeSpan`, and `queryArc` — is the exact (tiny) subset of [pattern-model.md](../../pattern-model.md) that Phase 0 uses, so that when Phase 2 builds the full pattern engine and mini-notation parser, nothing above the bridge changes shape.
+Time in `strobe` is **cycle-based** following TidalCycles ([architecture.md](../../architecture.md#the-clock-and-musical-time)): the unit is the *cycle*, tempo is *cycles per second* (`cps`), and `setcps(x)` sets it directly with the BPM helper `bpm = cps * 4 * 60`. The pattern shape here — `Pattern`, `Hap`, `TimeSpan`, and `queryArc` — is the exact (tiny) subset of [pattern-model.md](../../pattern-model.md) that Phase 0 uses, so that when Phase 2 builds the full pattern engine and mini-notation parser, nothing above the bridge changes shape.
 
 ## Location
 
 ```
-packages/tekno/
+packages/strobe/
   src/
     clock.ts        # NEW — Clock: cps, setcps, bpm, cycle↔frame mapping
     pattern.ts      # NEW — Pattern/Hap/TimeSpan + queryArc (minimal)
@@ -27,7 +27,7 @@ This document owns `clock.ts`, `pattern.ts`, `tracks.ts`, and the Phase 0 export
 Verbatim shapes from [pattern-model.md](../../pattern-model.md#the-three-primitives) — a pattern is a pure function from a span of time to the haps in it:
 
 ```ts
-// packages/tekno/src/pattern.ts
+// packages/strobe/src/pattern.ts
 
 /** A half-open interval of cycle-time, [begin, end). */
 export interface TimeSpan { begin: number; end: number; }
@@ -55,7 +55,7 @@ Because patterns are **pure functions** ([pattern-model.md](../../pattern-model.
 Phase 0 has no mini-notation parser (that is Phase 2). Instead a tiny helper builds the `bd*n` pattern directly: `n` evenly-spaced kick onsets per cycle. It correctly handles being queried over *any* span (including multi-cycle and fractional spans), by emitting one hap per `1/n` slot whose onset lies inside the queried span — exactly what `queryArc(sound("bd*4"), 0, 1)` would return ([pattern-model.md](../../pattern-model.md#testing-patterns)).
 
 ```ts
-// packages/tekno/src/pattern.ts (continued)
+// packages/strobe/src/pattern.ts (continued)
 
 export interface SoundValue { s: string; }
 
@@ -89,7 +89,7 @@ export function bdEvery(n: number): Pattern<SoundValue> {
 The clock holds the tempo and maps cycle-time to engine frames. It is anchored to the engine's frame counter (the source of truth — [architecture.md](../../architecture.md#the-clock-and-musical-time)) so JS wall-clock jitter never detunes the groove: "now in cycles" is derived from `stats().currentFrame`, not from `Date.now()`.
 
 ```ts
-// packages/tekno/src/clock.ts
+// packages/strobe/src/clock.ts
 import type { Engine } from "./engine";
 
 export class Clock {
@@ -154,7 +154,7 @@ frame  ─(− epochFrame, ÷ sampleRate)→ seconds ─(× cps, + epochCycle)�
 Phase 0 has one mutable slot, `p1`. Assigning it is a plain variable write — cheap and atomic from JS's perspective ([architecture.md](../../architecture.md#tracks-and-hot-swapping)). Re-running `p1(...)` swaps the pattern reference; the scheduler picks up the new pattern on its next query, and [07-hot-reload-demo.md](07-hot-reload-demo.md) aligns the visible effect to the next cycle boundary.
 
 ```ts
-// packages/tekno/src/tracks.ts
+// packages/strobe/src/tracks.ts
 import type { Pattern } from "./pattern";
 
 const slots: (Pattern<any> | null)[] = [null, null]; // index 1 = p1
@@ -169,7 +169,7 @@ export function getTrack(id: number): Pattern<any> | null { return slots[id] ?? 
 ### Public exports (`index.ts`)
 
 ```ts
-// packages/tekno/src/index.ts (Phase 0 surface)
+// packages/strobe/src/index.ts (Phase 0 surface)
 export { p1 } from "./tracks";
 export { bdEvery, bdEuclid } from "./pattern";   // Phase 0 stand-ins for sound("bd*n")
 export type { Pattern, Hap, TimeSpan } from "./pattern";

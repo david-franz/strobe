@@ -9,7 +9,7 @@ It defines *no* musical vocabulary — no mini-notation, no `fast`, no `sound`. 
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   pattern.ts        # everything in this doc
   fraction.ts       # rational time helper (see "Fractional time precision")
   pattern.test.ts   # queryArc unit tests

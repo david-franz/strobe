@@ -24,7 +24,7 @@ It implements the **full** table from the model, nothing added, nothing dropped:
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   mini.ts          # tokenizer + parser + AST→Pattern compiler
   mini.test.ts     # queryArc tests per construct + error-reporting tests
 ```

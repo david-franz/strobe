@@ -21,7 +21,7 @@ the `(fx-slot, fx-param)` id, and the shared `Smoothed<f32>` turns discrete upda
 ```
 engine/src/effects/smoothing.rs   # Smoothed<f32>: per-param one-pole + linear ParamRamp (new; shared)
 engine/src/scheduler.rs           # apply ParamSet/ParamRamp/TrackFx to the right slot/param (extended)
-packages/tekno/src/instrument.ts  # PARAM_REGISTRY entries for effect keys (routing + ramp set) (extended)
+packages/strobe/src/instrument.ts  # PARAM_REGISTRY entries for effect keys (routing + ramp set) (extended)
 ```
 
 Builds on [phase-2/05](../phase-2/05-continuous-signals.md) (signal sampling, `PARAM_RAMP_KEYS`),

@@ -9,7 +9,7 @@ The reason this works, and the reason **jitter here is invisible**, is that the 
 ## Location
 
 ```
-packages/tekno/
+packages/strobe/
   src/
     scheduler.ts     # NEW — this feature: tick loop + frame math + encoder
     engine.ts        # (04) the Engine interface it pushes to
@@ -18,7 +18,7 @@ packages/tekno/
     tracks.ts        # (06) the p1 track slot the scheduler reads
 ```
 
-This document owns `packages/tekno/src/scheduler.ts`. It consumes the clock and track from [06-clock-and-tracks.md](06-clock-and-tracks.md), the `Engine` from [04-napi-bridge.md](04-napi-bridge.md), and produces records mirroring [event-protocol.md](../../event-protocol.md#encoding-in-typescript).
+This document owns `packages/strobe/src/scheduler.ts`. It consumes the clock and track from [06-clock-and-tracks.md](06-clock-and-tracks.md), the `Engine` from [04-napi-bridge.md](04-napi-bridge.md), and produces records mirroring [event-protocol.md](../../event-protocol.md#encoding-in-typescript).
 
 ## Design
 
@@ -27,7 +27,7 @@ This document owns `packages/tekno/src/scheduler.ts`. It consumes the clock and 
 The encoder writes into **one** `ArrayBuffer` allocated at construction, viewed through one `DataView`, reused every tick — **no per-event allocation** ([event-protocol.md](../../event-protocol.md#encoding-in-typescript)). We size it for far more events than a 100 ms window can hold.
 
 ```ts
-// packages/tekno/src/scheduler.ts
+// packages/strobe/src/scheduler.ts
 const REC = 32;                 // bytes per record (event-protocol.md)
 const MAX_EVENTS_PER_TICK = 1024;
 

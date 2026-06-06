@@ -4,12 +4,12 @@
 
 This is the heart of Phase 5: the long-lived process that boots the engine once and then lets you *change the music while it plays*. The [Phase 0 hot-reload demo](../phase-0/07-hot-reload-demo.md) proved a single track (`p1`) can swap seamlessly at a cycle boundary on save. Phase 5 generalizes that to a real song: many tracks (`p1..pN`), arbitrary patterns, and the property that **only the tracks you actually changed are re-evaluated and swapped** — an untouched track keeps its identical pattern reference, so the scheduler never even notices it changed, and there is never a global "restart."
 
-The runtime exposes two entry points that share one core: `play(songPath)` (the file-watcher loop the CLI's `tekno play` drives) and `repl()` (an interactive prompt where each line you submit is evaluated against the same live engine/clock/scheduler). Both obey the cardinal rule from [architecture.md](../../architecture.md#the-core-principle-two-planes): **re-evaluation is a control-plane event; the audio plane is never touched.** A broken edit must print an error and keep the last-good music playing — the engine cannot stop, glitch, or drop a sample because of a typo.
+The runtime exposes two entry points that share one core: `play(songPath)` (the file-watcher loop the CLI's `strobe play` drives) and `repl()` (an interactive prompt where each line you submit is evaluated against the same live engine/clock/scheduler). Both obey the cardinal rule from [architecture.md](../../architecture.md#the-core-principle-two-planes): **re-evaluation is a control-plane event; the audio plane is never touched.** A broken edit must print an error and keep the last-good music playing — the engine cannot stop, glitch, or drop a sample because of a typo.
 
 ## Location
 
 ```
-packages/tekno/
+packages/strobe/
   src/
     runtime.ts          # GENERALIZED from Phase 0 — play() + repl() + watch/eval loop
     runtime/
@@ -65,7 +65,7 @@ export const p1 = track(1), p2 = track(2), p3 = track(3) /* … pN */;
 
 ### Isolated evaluation of a song (in `runtime/evalSong.ts`)
 
-A song file is plain TypeScript whose top-level code calls `setcps(...)`, `p1(...)`, `p2(...)`, etc. (exactly the README quickstart shape). To re-evaluate it we re-import the **song module** with a cache-busting URL — the `tekno` library itself stays loaded once, so the engine/clock/scheduler/track-registry singletons persist across reloads (the Phase 0 module-singleton strategy, generalized).
+A song file is plain TypeScript whose top-level code calls `setcps(...)`, `p1(...)`, `p2(...)`, etc. (exactly the README quickstart shape). To re-evaluate it we re-import the **song module** with a cache-busting URL — the `strobe` library itself stays loaded once, so the engine/clock/scheduler/track-registry singletons persist across reloads (the Phase 0 module-singleton strategy, generalized).
 
 ```ts
 // runtime/evalSong.ts
@@ -228,7 +228,7 @@ The REPL shares the same engine/clock/scheduler. Each submitted line is evaluate
 // runtime/repl.ts (sketch)
 import repl from "node:repl";
 export function startRepl(ctx: { engine; clock; scheduler }) {
-  const r = repl.start({ prompt: "tekno> ", useGlobal: false });
+  const r = repl.start({ prompt: "strobe> ", useGlobal: false });
   // Inject the live API into the REPL context so p1/p2/sound/note/hush resolve.
   Object.assign(r.context, makeLiveApi(ctx));   // p1..pN, sound, note, setcps, hush, …
   // p-calls go through the registry in DIRECT mode → boundary swap, never restart.
@@ -240,11 +240,11 @@ export function startRepl(ctx: { engine; clock; scheduler }) {
 
 ## Interfaces
 
-- **To the [CLI](02-cli.md):** `play(songPath, opts)` backs `tekno play`; `startRepl(ctx)` backs `tekno repl`. The CLI passes config (sample rate, buffer, lookahead) through `PlayOpts`.
+- **To the [CLI](02-cli.md):** `play(songPath, opts)` backs `strobe play`; `startRepl(ctx)` backs `strobe repl`. The CLI passes config (sample rate, buffer, lookahead) through `PlayOpts`.
 - **To [Phase 0 / 04 napi-bridge](../phase-0/04-napi-bridge.md):** owns one `Engine` (`start`/`stop`/`stats`); never calls `pushEvents` itself — the scheduler does.
 - **To [Phase 0 / 05 scheduler](../phase-0/05-lookahead-scheduler.md):** owns one `Scheduler`; relies on its committed-window frontier so reassignment cannot rewrite enqueued events.
 - **To [Phase 0 / 06 clock + tracks](../phase-0/06-clock-and-tracks.md):** owns one `Clock`; the song's `setcps`/`p1..pN` mutate the library singletons through the capture/apply hooks above.
-- **To the user's workflow:** the user edits a `.ts` song in any editor and saves, or types at the `tekno repl` prompt. Both routes funnel through the same diff → boundary-swap path. Nothing the user does can stop the audio thread.
+- **To the user's workflow:** the user edits a `.ts` song in any editor and saves, or types at the `strobe repl` prompt. Both routes funnel through the same diff → boundary-swap path. Nothing the user does can stop the audio thread.
 
 ## Edge cases & risks
 
@@ -262,6 +262,6 @@ export function startRepl(ctx: { engine; clock; scheduler }) {
 - [ ] **Untouched tracks are not re-evaluated/swapped.** A no-op save (rewriting the file byte-identically) produces an empty `SwapPlan` and triggers no boundary swap. *How to test:* unit test `diffTracks` + an integration test asserting zero swaps on identical content.
 - [ ] **Broken edit keeps last-good playing.** Introduce a syntax error and save: the error is printed, `lastGood` is unchanged, and audio continues with **zero** underruns/late events across the edit. Fix it: the corrected tracks swap in at the next boundary. *How to test:* the [Phase 0 "survives a bad edit"](../phase-0/07-hot-reload-demo.md#acceptance-criteria-the-phase-0-verification-recipe) recipe, extended to multiple tracks, run headlessly.
 - [ ] **Audio never restarts.** Across any number of edits the engine's `currentFrame` increases monotonically with no `start()`/`stop()` calls after boot. *How to test:* spy on the `Engine` mock/native handle; assert `start` called exactly once and `stop` zero times during a 60 s edit session.
-- [ ] **REPL parity.** Typing `p1( sound("bd*8") )` at `tekno repl` swaps `p1` at the next boundary identically to a file edit; typing `queryArc(sound("bd ~ sn ~"), 0, 1)` prints the expected `Hap` list ([pattern-model.md](../../pattern-model.md#testing-patterns)). *How to test:* feed lines to the REPL programmatically and assert the swap plan / printed output.
+- [ ] **REPL parity.** Typing `p1( sound("bd*8") )` at `strobe repl` swaps `p1` at the next boundary identically to a file edit; typing `queryArc(sound("bd ~ sn ~"), 0, 1)` prints the expected `Hap` list ([pattern-model.md](../../pattern-model.md#testing-patterns)). *How to test:* feed lines to the REPL programmatically and assert the swap plan / printed output.
 - [ ] **Clean telemetry throughout.** `stats()` reports `underruns === 0 && lateEvents === 0` for the whole session including across every edit and every REPL command. *How to test:* assert after each mutation in the headless harness.
 - [ ] **Cross-platform.** All of the above pass on macOS, Linux, and Windows in CI, including the `fs.watchFile` polling fallback path.

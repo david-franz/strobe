@@ -11,7 +11,7 @@ It also defines the **verification recipe**: the exact steps and the `stats()` a
 ```
 examples/
   phase0-kick.ts        # NEW — the watched song file the user edits
-packages/tekno/
+packages/strobe/
   src/
     runtime.ts          # NEW — this feature: file-watcher + boundary swap + engine wiring
     index.ts            # (06) exports setcps / p1 / bdEvery / bdEuclid
@@ -20,7 +20,7 @@ packages/tekno/
     engine.ts           # (04) createNativeEngine()
 ```
 
-This document owns `examples/phase0-kick.ts` and `packages/tekno/src/runtime.ts`. It wires together [04](04-napi-bridge.md) (engine), [05](05-lookahead-scheduler.md) (scheduler), and [06](06-clock-and-tracks.md) (clock + track slot).
+This document owns `examples/phase0-kick.ts` and `packages/strobe/src/runtime.ts`. It wires together [04](04-napi-bridge.md) (engine), [05](05-lookahead-scheduler.md) (scheduler), and [06](06-clock-and-tracks.md) (clock + track slot).
 
 ## Design
 
@@ -30,7 +30,7 @@ The song is plain TypeScript that calls the Phase 0 API. The user edits *only th
 
 ```ts
 // examples/phase0-kick.ts
-import { setcps, p1, bdEvery } from "tekno";
+import { setcps, p1, bdEvery } from "strobe";
 
 setcps(130 / 60 / 4);     // ~130 BPM, 4 beats per cycle
 
@@ -45,7 +45,7 @@ p1( bdEvery(4) );         // four-on-the-floor kick
 The runtime is the long-lived process. It (1) creates the native engine and starts it, (2) anchors the clock and starts the scheduler, (3) imports the song once to populate `p1`, then (4) watches the song file and re-imports it on change — but **applies the swap at the next cycle boundary** so the music never jumps mid-bar.
 
 ```ts
-// packages/tekno/src/runtime.ts
+// packages/strobe/src/runtime.ts
 import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createNativeEngine } from "./engine";
@@ -122,14 +122,14 @@ The coarse `setTimeout` wait inside `swapAtCycleBoundary` does not need to be pr
 
 ### Module-singleton strategy (so reload preserves state)
 
-The song re-import must reach the *same* `Clock` and the *same* track slot module each time, or the swap would reset state. The runtime keeps the `tekno` library loaded once (the engine, clock, scheduler, and `tracks.ts` slot state persist); only the **song module** is re-imported with a cache-busting query string. `setActiveClock(clock)` registers the live clock into a library singleton that the song's `setcps()` mutates. This is the Phase 0 precursor to the richer hot-reload (re-evaluating only changed tracks) in Phase 5 ([roadmap.md](../../roadmap.md#phase-5--live-coding-dx)).
+The song re-import must reach the *same* `Clock` and the *same* track slot module each time, or the swap would reset state. The runtime keeps the `strobe` library loaded once (the engine, clock, scheduler, and `tracks.ts` slot state persist); only the **song module** is re-imported with a cache-busting query string. `setActiveClock(clock)` registers the live clock into a library singleton that the song's `setcps()` mutates. This is the Phase 0 precursor to the richer hot-reload (re-evaluating only changed tracks) in Phase 5 ([roadmap.md](../../roadmap.md#phase-5--live-coding-dx)).
 
 ### Running it
 
 ```bash
 # Phase 0 dev run (tsx/ts-node executes TS directly):
-npx tsx -e "import('tekno/runtime').then(m => m.play('examples/phase0-kick.ts'))"
-# or a tiny bin: `tekno-play examples/phase0-kick.ts`
+npx tsx -e "import('strobe/runtime').then(m => m.play('examples/phase0-kick.ts'))"
+# or a tiny bin: `strobe-play examples/phase0-kick.ts`
 ```
 
 ## Interfaces

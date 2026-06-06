@@ -14,7 +14,7 @@ type Pattern<T> = (span: TimeSpan) => Hap<T>[];
 
 These Phase 2 docs are the **implementation plan** for exactly that model. They specify *how to build* `Pattern`/`Hap`/`TimeSpan`, the mini-notation table, and the combinator vocabulary already defined in [pattern-model.md](../../pattern-model.md). They never restate or alter the semantics — `Hap {whole, part, value}`, `TimeSpan {begin, end}` in cycles, discrete-vs-continuous (`whole: undefined`), `queryArc` testing — those are canonical. Where this plan adds detail (algorithms, RNG seeding, control-map key routing) it stays 100% consistent with the canonical docs and with the LOCKED stack: Rust DSP engine, TypeScript control language, Tidal/Strudel-style pattern combinators.
 
-Everything here is **pure TypeScript in `packages/tekno/src/`**. No DSP, no Rust. The only place Phase 2 touches the engine is the scheduler ([06](06-scheduler-integration.md)), which extends the Phase 0 look-ahead scheduler ([phase-0/05-lookahead-scheduler.md](../phase-0/05-lookahead-scheduler.md)) to query real patterns and batch-encode events through the Phase 0 `Engine.pushEvents` bridge.
+Everything here is **pure TypeScript in `packages/strobe/src/`**. No DSP, no Rust. The only place Phase 2 touches the engine is the scheduler ([06](06-scheduler-integration.md)), which extends the Phase 0 look-ahead scheduler ([phase-0/05-lookahead-scheduler.md](../phase-0/05-lookahead-scheduler.md)) to query real patterns and batch-encode events through the Phase 0 `Engine.pushEvents` bridge.
 
 ## The features
 

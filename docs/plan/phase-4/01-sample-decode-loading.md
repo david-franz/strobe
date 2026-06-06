@@ -22,14 +22,14 @@ engine/
       sampler.rs          # (02) reads SampleBank buffers
 bindings/native/
   src/lib.rs              # + napi method `load_sample(pcm, channels, sampleRate) -> u32`
-packages/tekno/
+packages/strobe/
   src/
     sample/
       load.ts             # NEW — decode-on-disk path + engine.loadSample wrapper, `sample()`
       youtube.ts          # (05) ends by calling the same loadSample path
 ```
 
-This document owns `engine/src/sample/decode.rs`, `engine/src/sample/bank.rs`, the `load_sample` napi method, and `packages/tekno/src/sample/load.ts`.
+This document owns `engine/src/sample/decode.rs`, `engine/src/sample/bank.rs`, the `load_sample` napi method, and `packages/strobe/src/sample/load.ts`.
 
 ## Design
 
@@ -37,7 +37,7 @@ This document owns `engine/src/sample/decode.rs`, `engine/src/sample/bank.rs`, t
 
 There are two valid producers of PCM, and the `loadSample` control call accepts both, so the bridge stays simple:
 
-- **TS-side decode is the default for `tekno`'s own files and YouTube.** The TS control plane already has the bytes (a local file it read, or the WAV `ffmpeg` produced in [05](05-youtube-ingest.md)). For local files we can decode in Rust and only pass a path, but to keep one bridge shape, the canonical control call is **`loadSample(pcm: Float32Array, channels, sampleRate)`** ([event-protocol.md](../../event-protocol.md#control-call-surface-non-real-time)) — TS hands the engine ready PCM.
+- **TS-side decode is the default for `strobe`'s own files and YouTube.** The TS control plane already has the bytes (a local file it read, or the WAV `ffmpeg` produced in [05](05-youtube-ingest.md)). For local files we can decode in Rust and only pass a path, but to keep one bridge shape, the canonical control call is **`loadSample(pcm: Float32Array, channels, sampleRate)`** ([event-protocol.md](../../event-protocol.md#control-call-surface-non-real-time)) — TS hands the engine ready PCM.
 - **Rust-side decode is exposed too** (a thin `decodeFile(path) -> {pcm, channels, sampleRate}` napi helper) so the heavy `symphonia` work runs in Rust on a worker thread, and TS just forwards the result into `loadSample`. This is the path `sample()` uses for local files.
 
 Either way, **`loadSample` is the single chokepoint into the engine**, it is non-real-time, and it returns a `sample id`.
@@ -225,7 +225,7 @@ Samples are big (a 10 s stereo clip at 48 kHz ≈ 3.8 MB). The bank enforces a c
 ### TS-side API (`load.ts`)
 
 ```ts
-// packages/tekno/src/sample/load.ts
+// packages/strobe/src/sample/load.ts
 export interface SampleHandle {
   id: number;               // engine sample id
   channels: number;

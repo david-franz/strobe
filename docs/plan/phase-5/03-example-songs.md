@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The examples are how a person *learns the instrument*. Each is a complete, runnable `.ts` song that exercises a real slice of the API end-to-end, annotated so the reader can see exactly which part of the language does what. They double as the [cross-cutting "runnable example"](../../roadmap.md#cross-cutting-definition-of-done-every-phase) for Phase 5 and as living regression tests: each must play underrun-free under `tekno play` and hot-reload seamlessly.
+The examples are how a person *learns the instrument*. Each is a complete, runnable `.ts` song that exercises a real slice of the API end-to-end, annotated so the reader can see exactly which part of the language does what. They double as the [cross-cutting "runnable example"](../../roadmap.md#cross-cutting-definition-of-done-every-phase) for Phase 5 and as living regression tests: each must play underrun-free under `strobe play` and hot-reload seamlessly.
 
 Four songs, increasing in depth, covering the project's two signature genres and its two signature techniques (the techno sidechain pump and the hip-hop chopped sample):
 
@@ -23,7 +23,7 @@ examples/
   filter-pad.ts          # NEW — evolving filter-sweep pad
 ```
 
-These join the existing [`examples/phase0-kick.ts`](../phase-0/07-hot-reload-demo.md#the-watched-song-file). Each runs with `tekno play examples/<name>.ts` ([02-cli.md](02-cli.md)).
+These join the existing [`examples/phase0-kick.ts`](../phase-0/07-hot-reload-demo.md#the-watched-song-file). Each runs with `strobe play examples/<name>.ts` ([02-cli.md](02-cli.md)).
 
 ## Design
 
@@ -34,11 +34,11 @@ The smallest possible *real* song, intentionally one track. It teaches: imports,
 ```ts
 // examples/hello-kick.ts
 //
-// Your first tekno song. Run it with:
-//   tekno play examples/hello-kick.ts
+// Your first strobe song. Run it with:
+//   strobe play examples/hello-kick.ts
 // Then edit a line, save, and hear it change at the next cycle boundary.
 
-import { setcps, p1, sound } from "tekno";
+import { setcps, p1, sound } from "strobe";
 
 setcps(130 / 60 / 4);          // ~130 BPM, 4 beats per cycle (see architecture.md)
 
@@ -60,7 +60,7 @@ The README's signature example, fully fleshed out as three tracks: kick, offbeat
 // A techno loop that "pumps": the bass ducks every time the kick hits.
 // Edit any track and save — only the track you changed swaps, at the next bar.
 
-import { setcps, p1, p2, p3, sound, note, sine } from "tekno";
+import { setcps, p1, p2, p3, sound, note, sine } from "strobe";
 
 setcps(130 / 60 / 4);                          // ~130 BPM
 
@@ -98,7 +98,7 @@ A boom-bap beat built around a **chopped sample** — the core hip-hop move from
 // fromYouTube path is OPT-IN and subject to copyright/ToS — see the legal note in
 // docs/guide/sampling.md and roadmap.md#risks. Local files are the safe path.
 
-import { setcps, p1, p2, p3, sound, sample } from "tekno";
+import { setcps, p1, p2, p3, sound, sample } from "strobe";
 
 setcps(90 / 60 / 4);                            // ~90 BPM, classic boom-bap tempo
 
@@ -138,7 +138,7 @@ A single sustained pad whose filter cutoff, resonance, and stereo position all m
 // and the stereo image drifts — all driven by slow continuous signals.
 // Let it run for a minute; it never quite repeats.
 
-import { setcps, p1, note, sine, saw, perlin } from "tekno";
+import { setcps, p1, note, sine, saw, perlin } from "strobe";
 
 setcps(120 / 60 / 4);                           // ~120 BPM
 
@@ -158,31 +158,31 @@ p1( note("<c3 eb3 g3 bb3>")                     // a chord, one note per cycle, 
 
 ### Shared conventions
 
-- Every file opens with a comment block: what it is, how to run it (`tekno play examples/<name>.ts`), and 2–3 "Try this" edits — so the file teaches the hot-reload workflow itself.
-- Imports are explicit named imports from `"tekno"`, matching the [README](../../../README.md) exactly. No wildcard imports, no setup boilerplate.
+- Every file opens with a comment block: what it is, how to run it (`strobe play examples/<name>.ts`), and 2–3 "Try this" edits — so the file teaches the hot-reload workflow itself.
+- Imports are explicit named imports from `"strobe"`, matching the [README](../../../README.md) exactly. No wildcard imports, no setup boilerplate.
 - Tempos and note ranges are genre-appropriate (130 BPM techno, 90 BPM boom-bap, 120 BPM pad).
 - `hiphop-chop.ts` references a local `examples/assets/break.wav` the repo ships (a short, clearly-licensed/royalty-free loop), so the example runs out of the box without any network or YouTube step.
 
 ## Interfaces
 
-- **To the [CLI](02-cli.md):** each song is the argument to `tekno play examples/<name>.ts`; `hello-kick.ts` is the one the getting-started doc walks through.
+- **To the [CLI](02-cli.md):** each song is the argument to `strobe play examples/<name>.ts`; `hello-kick.ts` is the one the getting-started doc walks through.
 - **To the [hot-reload runtime](01-hot-reload-runtime.md):** the multi-track songs (`techno-sidechain`, `hiphop-chop`) are the fixtures for the "only changed tracks swap" acceptance test — editing one `pN` line must swap only that track.
 - **To [Phase 1–4](../../roadmap.md):** they exercise synth/drum voices (1), the parser + combinators + chain API + continuous signals (2), the effects rack incl. sidechain (3), and the sampler `.chop`/`.slice` (4). They are the de-facto integration test that those phases compose correctly.
 - **To the [docs](07-getting-started-docs.md):** the getting-started guide builds `hello-kick.ts` line by line; the combinator and chain-API references cite snippets from `techno-sidechain.ts` and `filter-pad.ts`.
 
 ## Edge cases & risks
 
-- **Missing sample asset.** If `examples/assets/break.wav` is absent (or a user points `hiphop-chop.ts` at a path that does not exist), `sample()` reports a clear "sample not found" error on load; under `tekno play` this is a load error surfaced by the CLI, and under a *live edit* it is caught and the last-good pattern keeps playing ([01](01-hot-reload-runtime.md#edge-cases--risks)). The drums (synth voices) still play regardless.
+- **Missing sample asset.** If `examples/assets/break.wav` is absent (or a user points `hiphop-chop.ts` at a path that does not exist), `sample()` reports a clear "sample not found" error on load; under `strobe play` this is a load error surfaced by the CLI, and under a *live edit* it is caught and the last-good pattern keeps playing ([01](01-hot-reload-runtime.md#edge-cases--risks)). The drums (synth voices) still play regardless.
 - **YouTube path is opt-in only.** The `fromYouTube` line is commented out and flagged; it requires `yt-dlp`/`ffmpeg` ([04](04-packaging-prebuilts.md#optional-external-clis-yt-dlpffmpeg)) and carries the copyright/ToS caveat ([roadmap.md](../../roadmap.md#risks)). No example *requires* it; local files are the default and the safe path.
 - **Tempo/gain sanity.** Gains are kept under 1.0 and the master limiter ([Phase 1](../phase-1/00-overview.md)) guards clipping; examples are checked to not trip the limiter under normal playback.
-- **Determinism for tests.** Examples that use chance combinators (`degrade`, `sometimesBy`) are still underrun-safe; the regression test asserts *playability and clean stats*, not exact audio, for those — deterministic examples (`hello-kick`, the pad's signal automation) can additionally be golden-checked via `tekno render` ([02](02-cli.md#render--offline-bounce-in-clirenderts)).
+- **Determinism for tests.** Examples that use chance combinators (`degrade`, `sometimesBy`) are still underrun-safe; the regression test asserts *playability and clean stats*, not exact audio, for those — deterministic examples (`hello-kick`, the pad's signal automation) can additionally be golden-checked via `strobe render` ([02](02-cli.md#render--offline-bounce-in-clirenderts)).
 - **Cross-platform paths.** Songs use forward-slash relative paths; the runtime resolves them against the cwd so they work on Windows too.
 
 ## Acceptance criteria
 
-- [ ] **All four play underrun-free.** Each `tekno play examples/<name>.ts` runs for ≥60 s with `stats()` reporting zero underruns and zero late events. *How to test:* the CI playback harness runs each headless on each OS and asserts clean stats.
+- [ ] **All four play underrun-free.** Each `strobe play examples/<name>.ts` runs for ≥60 s with `stats()` reporting zero underruns and zero late events. *How to test:* the CI playback harness runs each headless on each OS and asserts clean stats.
 - [ ] **Only-changed-track hot-reload.** Editing one `pN` line in `techno-sidechain.ts` swaps only that track at the next boundary with no glitch. *How to test:* the [runtime harness](01-hot-reload-runtime.md#acceptance-criteria) drives the edit and asserts the `SwapPlan`.
 - [ ] **API fidelity.** Every method/function used appears in [pattern-model.md](../../pattern-model.md) (or the [Phase 4 sampling API](../phase-4/00-overview.md)); no example invents API. *How to test:* a lint/grep check cross-referencing example symbols against the exported surface.
 - [ ] **Runs out of the box.** `hello-kick`, `techno-sidechain`, and `filter-pad` need no assets and no external CLIs; `hiphop-chop` runs against the shipped `examples/assets/break.wav` with no network. *How to test:* fresh-checkout CI run with `yt-dlp`/`ffmpeg` absent.
-- [ ] **Render reproducibility.** Deterministic examples bounce identically via `tekno render`. *How to test:* compare two renders of `filter-pad.ts` for bit-equality (no chance combinators in it).
+- [ ] **Render reproducibility.** Deterministic examples bounce identically via `strobe render`. *How to test:* compare two renders of `filter-pad.ts` for bit-equality (no chance combinators in it).
 - [ ] **Cross-platform.** All of the above pass on macOS, Linux, and Windows in CI.

@@ -1,6 +1,6 @@
 # Architecture
 
-This document explains how `tekno` produces glitch-free sound while letting you change the music live from TypeScript. If you read only one design doc, read this one.
+This document explains how `strobe` produces glitch-free sound while letting you change the music live from TypeScript. If you read only one design doc, read this one.
 
 ## The core principle: two planes
 

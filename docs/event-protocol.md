@@ -107,7 +107,7 @@ interface Engine {
 }
 ```
 
-> The `startCapture`/`stopCapture` pair is the only addition to this surface after Phase 0, and it is purely a control-plane concern — it adds **no event opcodes** and does not change the 32-byte record. The offline backends add a sibling `startOffline(...)` and `replayJournal(...)` used by `tekno render`/`bounce` ([Phase 5 · session recording](plan/phase-5/05-session-recording.md), [audio capture & stems](plan/phase-5/06-audio-capture-stems.md)). The web backend ([Phase 6](plan/phase-6/04-web-engine-impl.md)) may implement or stub capture independently; nothing above the `Engine` interface depends on which backend is active.
+> The `startCapture`/`stopCapture` pair is the only addition to this surface after Phase 0, and it is purely a control-plane concern — it adds **no event opcodes** and does not change the 32-byte record. The offline backends add a sibling `startOffline(...)` and `replayJournal(...)` used by `strobe render`/`bounce` ([Phase 5 · session recording](plan/phase-5/05-session-recording.md), [audio capture & stems](plan/phase-5/06-audio-capture-stems.md)). The web backend ([Phase 6](plan/phase-6/04-web-engine-impl.md)) may implement or stub capture independently; nothing above the `Engine` interface depends on which backend is active.
 
 `pushEvents` takes an already-encoded `ArrayBuffer` of N×32 bytes so the scheduler batches a whole lookahead window in one call.
 

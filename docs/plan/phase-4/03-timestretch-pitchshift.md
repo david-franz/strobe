@@ -23,7 +23,7 @@ engine/
       bank.rs            # (01) — prepared buffers inserted here
 bindings/native/
   src/lib.rs             # + napi: prepare_stretched(sampleId, ratio, semitones) -> u32
-packages/tekno/
+packages/strobe/
   src/
     sample/
       edit.ts            # (04) — `.stretch(x)` / `.pitch(s)` chainable methods live here

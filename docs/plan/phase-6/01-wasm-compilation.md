@@ -17,8 +17,8 @@ bindings/web/
   Cargo.toml             # NEW — cdylib, wasm-bindgen, depends on `engine` (features = ["web"])
   src/lib.rs             # NEW — #[wasm_bindgen] WasmEngine over engine::Engine
   build.sh               # NEW — wasm-pack / wasm-bindgen-cli pipeline
-  pkg/                   # generated — tekno_web_bg.wasm + tekno_web.js (glue) + .d.ts
-packages/tekno/
+  pkg/                   # generated — strobe_web_bg.wasm + strobe_web.js (glue) + .d.ts
+packages/strobe/
   src/engine.web.ts      # NEW (owned by [04]) — loads pkg/, implements the Engine interface
 ```
 
@@ -168,7 +168,7 @@ wasm-pack build bindings/web \
 
 ## Edge cases & risks
 
-- **A native-only dep leaks into the wasm build.** If `napi` or `cpal` (native host) is reachable from the `web` feature, `wasm32-unknown-unknown` won't link (no OS threads/sockets). *Guardrail:* `cpal` is `optional`, only pulled by `native`; `napi` lives only in `bindings/native`; CI runs `cargo build -p tekno-web --target wasm32-unknown-unknown --no-default-features --features web`.
+- **A native-only dep leaks into the wasm build.** If `napi` or `cpal` (native host) is reachable from the `web` feature, `wasm32-unknown-unknown` won't link (no OS threads/sockets). *Guardrail:* `cpal` is `optional`, only pulled by `native`; `napi` lives only in `bindings/native`; CI runs `cargo build -p strobe-web --target wasm32-unknown-unknown --no-default-features --features web`.
 - **`fundsp` must build for wasm.** It is `no_std`-friendly pure DSP and should compile; *risk* is a transitive dep using `std::time`/threads. *Guardrail:* the CI wasm build above is the canary; pin/patch any offending transitive dep.
 - **No `fetch` / no DOM on the audio thread.** The wasm module is *constructed* and *driven* inside the worklet, which has **no `fetch`, no DOM** ([02](02-audioworklet-host.md)). So `loadSample` decoding must happen on the **main thread** and only the decoded PCM crosses in ([04](04-web-engine-impl.md)); the wasm API here only *accepts* PCM, never fetches it.
 - **WASM memory growth on the audio thread.** Growing `WebAssembly.Memory` mid-`process()` would allocate — forbidden on the audio thread. *Guardrail:* pre-size the engine's linear memory (initial pages cover voices + sample buffers + ring + scratch); `loadSample` (main thread, non-real-time) is the only path that may grow memory, and it does so *between* render quanta.
@@ -177,9 +177,9 @@ wasm-pack build bindings/web \
 
 ## Acceptance criteria
 
-- [ ] **`engine/` compiles for wasm with native deps gated out.** *Test:* `cargo build -p tekno-web --target wasm32-unknown-unknown --no-default-features --features web` succeeds; `cargo tree` shows **no `cpal`, no `napi`** in the wasm dependency graph.
-- [ ] **Native build still green.** *Test:* `cargo build -p tekno-native` (engine `features=["native"]`) still builds and the Phase 0 example still plays — the feature split broke nothing.
-- [ ] **`wasm-pack build` emits a usable `pkg/`.** *Test:* `bindings/web/build.sh` produces `pkg/tekno_web_bg.wasm`, `pkg/tekno_web.js` (ES module), and `pkg/tekno_web.d.ts` exposing `WasmEngine` with `new`, `render`, `load_sample`, `stats`.
+- [ ] **`engine/` compiles for wasm with native deps gated out.** *Test:* `cargo build -p strobe-web --target wasm32-unknown-unknown --no-default-features --features web` succeeds; `cargo tree` shows **no `cpal`, no `napi`** in the wasm dependency graph.
+- [ ] **Native build still green.** *Test:* `cargo build -p strobe-native` (engine `features=["native"]`) still builds and the Phase 0 example still plays — the feature split broke nothing.
+- [ ] **`wasm-pack build` emits a usable `pkg/`.** *Test:* `bindings/web/build.sh` produces `pkg/strobe_web_bg.wasm`, `pkg/strobe_web.js` (ES module), and `pkg/strobe_web.d.ts` exposing `WasmEngine` with `new`, `render`, `load_sample`, `stats`.
 - [ ] **`render` is allocation-free.** *Test:* call `render(128)` in a tight 100k-iteration loop in a headless wasm harness; assert WASM memory `byteLength` does not grow and no per-call JS allocation occurs.
 - [ ] **`render` drains the SAB ring with the 32-byte layout.** *Test:* write a known `NoteOn` record into the SAB at a frame inside the next quantum; after `render`, assert a voice was triggered (audible/golden), proving the same layout + drain as native ([phase-0/02-event-ring-buffer.md](../phase-0/02-event-ring-buffer.md)).
 - [ ] **SIMD on/off produce identical samples.** *Test:* golden-compare `render` output of the `+simd128` build vs the scalar build for the same event stream; bit-for-bit (or within DSP null-test tolerance) equal.

@@ -1,4 +1,4 @@
-# Phase 6.02 — The AudioWorklet host (`worklet/tekno-processor.js`)
+# Phase 6.02 — The AudioWorklet host (`worklet/strobe-processor.js`)
 
 ## Purpose
 
@@ -11,9 +11,9 @@ Two browser-specific constraints shape the whole design: **the worklet cannot `f
 ```
 bindings/web/
   worklet/
-    tekno-processor.js     # NEW — the AudioWorkletProcessor (registered in the worklet scope)
+    strobe-processor.js     # NEW — the AudioWorkletProcessor (registered in the worklet scope)
   pkg/                     # (01) generated WASM + ES glue, imported here and on main thread
-packages/tekno/
+packages/strobe/
   src/web/audio-host.ts    # NEW — main-thread: AudioContext, addModule, AudioWorkletNode, gesture
   src/engine.web.ts        # ([04]) — uses audio-host.ts to implement start()/stop()
 ```
@@ -40,10 +40,10 @@ The quantum is **128 frames**, fixed by the Web Audio spec. `render(128)` is cal
 The worklet scope has **no `fetch` and no `WebAssembly` streaming from a URL is needed** — and we must never do I/O on the audio thread. So the main thread fetches the `.wasm` bytes once, and ships them (plus the SAB ring and config) to the processor via the node's `port` *before* the first `process()`. The processor instantiates the module **synchronously in handling that first message / at construction**, then signals "ready".
 
 ```js
-// bindings/web/worklet/tekno-processor.js  (runs in the AudioWorkletGlobalScope)
-import initSync, { WasmEngine } from "../pkg/tekno_web.js"; // ES glue; initSync takes raw bytes
+// bindings/web/worklet/strobe-processor.js  (runs in the AudioWorkletGlobalScope)
+import initSync, { WasmEngine } from "../pkg/strobe_web.js"; // ES glue; initSync takes raw bytes
 
-class TeknoProcessor extends AudioWorkletProcessor {
+class StrobeProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.engine = null;
@@ -78,7 +78,7 @@ class TeknoProcessor extends AudioWorkletProcessor {
     return true;                           // keep processing
   }
 }
-registerProcessor("tekno-processor", TeknoProcessor);
+registerProcessor("strobe-processor", StrobeProcessor);
 ```
 
 - `process()` does **no allocation** (the `Float32Array` view aliases existing WASM memory; reuse one cached view if memory never grows during playback — see risks), **no `fetch`, no DOM, no `postMessage` on the hot path** (telemetry is written to a stats SAB the main thread polls; [03](03-sharedarraybuffer-ring.md)/[04](04-web-engine-impl.md)).
@@ -90,7 +90,7 @@ registerProcessor("tekno-processor", TeknoProcessor);
 The main thread creates the `AudioContext`, adds the worklet module, fetches the WASM bytes, creates the `AudioWorkletNode`, and ships init data over the node port. Browser **autoplay policy** requires this to start (or `resume()`) inside a **user gesture** (click/tap), so `start()` is wired to a button.
 
 ```ts
-// packages/tekno/src/web/audio-host.ts
+// packages/strobe/src/web/audio-host.ts
 export interface AudioHost {
   ctx: AudioContext;
   node: AudioWorkletNode;
@@ -98,8 +98,8 @@ export interface AudioHost {
 }
 
 export async function startAudioHost(opts: {
-  wasmUrl: string;            // URL of pkg/tekno_web_bg.wasm
-  workletUrl: string;         // URL of worklet/tekno-processor.js
+  wasmUrl: string;            // URL of pkg/strobe_web_bg.wasm
+  workletUrl: string;         // URL of worklet/strobe-processor.js
   ringSab: SharedArrayBuffer; // the event ring [03]
   ringPtr: number; ringLen: number;
   channels: number;
@@ -111,7 +111,7 @@ export async function startAudioHost(opts: {
 
   const wasmBytes = await fetch(opts.wasmUrl).then(r => r.arrayBuffer()); // main-thread fetch only
 
-  const node = new AudioWorkletNode(ctx, "tekno-processor", {
+  const node = new AudioWorkletNode(ctx, "strobe-processor", {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [opts.channels],

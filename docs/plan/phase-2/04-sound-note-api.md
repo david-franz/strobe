@@ -9,7 +9,7 @@ This file also fixes the **mapping from control-map keys to engine params/opcode
 ## Location
 
 ```
-packages/tekno/src/
+packages/strobe/src/
   sound.ts        # sound(), note(), freq(); the ControlMap type; the modifier methods
   instrument.ts   # note-name/number parsing → frequency; the control-key → engine-param registry
   sound.test.ts

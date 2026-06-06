@@ -16,7 +16,7 @@ engine/src/
   audio_io.rs       # tap points: per-track (post-FX, pre-master) and master (post-limiter)
 bindings/native/
   lib.rs            # NEW control calls: startCapture(config), stopCapture()
-packages/tekno/src/record/
+packages/strobe/src/record/
   capture.ts        # TS API: record.start()/stop(); live-coding rec()/unrec() helpers
 ```
 
@@ -79,7 +79,7 @@ interface Engine {
 
 ```ts
 // capture.ts
-import { record } from "tekno";
+import { record } from "strobe";
 record.start({ dir: "takes/2026-06-06", stems: true });   // begin capturing
 // …perform / live-code…
 const out = await record.stop();    // { master, stems: { p1, p2, … }, droppedFrames }
@@ -88,9 +88,9 @@ const out = await record.stop();    // { master, stems: { p1, p2, … }, dropped
 Live-coding helpers `rec()` / `unrec()` wrap these for the REPL. From the CLI ([02](02-cli.md)):
 
 ```
-tekno play song.ts --rec takes/             # capture master while you perform
-tekno play song.ts --rec takes/ --stems     # + one file per channel loop
-tekno play song.ts --rec takes/ --session   # also write a .teknosession (doc 06)
+strobe play song.ts --rec takes/             # capture master while you perform
+strobe play song.ts --rec takes/ --stems     # + one file per channel loop
+strobe play song.ts --rec takes/ --session   # also write a .strobesession (doc 06)
 ```
 
 When `--rec` and `--session` are combined, the runtime enables **both** the audio capture (this doc) and the session tee ([05](05-session-recording.md)) at once — you get the immediate WAVs *and* a re-renderable session.
@@ -113,7 +113,7 @@ When `--rec` and `--session` are combined, the runtime enables **both** the audi
 
 ## Acceptance criteria
 
-- **Master capture works.** `tekno play song.ts --rec takes/` produces `takes/master.wav` that, on playback, matches what was heard; `stats()` reports zero `capture_dropped_frames` under normal load.
+- **Master capture works.** `strobe play song.ts --rec takes/` produces `takes/master.wav` that, on playback, matches what was heard; `stats()` reports zero `capture_dropped_frames` under normal load.
 - **Stems come out separated and aligned.** `--stems` writes `master.wav` + `stems/p1.wav…`, one per assigned channel loop. Each stem solos correctly (contains only that track), and importing all stems into a DAW lines them up sample-accurately.
 - **No audio-thread regression.** Enabling capture does not introduce underruns: the kebab test from the [Phase 0 recipe](../phase-0/07-hot-reload-demo.md#acceptance-criteria-the-phase-0-verification-recipe) still passes with `--rec --stems` on.
 - **Reused by offline bounce.** [05](05-session-recording.md)'s `bounce --stems` emits the same file structure via the same sinks (single code path verified by a shared test).

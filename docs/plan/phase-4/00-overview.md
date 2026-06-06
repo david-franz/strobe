@@ -1,10 +1,10 @@
 # Phase 4 — Sampling (overview)
 
-> **Legal / ToS note, up front.** `tekno`'s YouTube ingest shells out to `yt-dlp`. That works *technically*, but downloading audio from YouTube can conflict with YouTube's Terms of Service and with copyright. We keep YouTube sampling **opt-in and clearly documented**, never the headline feature. **Local files and microphone input are the always-safe paths.** Treat sampled material as you would in any production: clear it or transform it appropriately. See [roadmap.md#risks](../../roadmap.md#risks) and [05-youtube-ingest.md](05-youtube-ingest.md) for the full posture.
+> **Legal / ToS note, up front.** `strobe`'s YouTube ingest shells out to `yt-dlp`. That works *technically*, but downloading audio from YouTube can conflict with YouTube's Terms of Service and with copyright. We keep YouTube sampling **opt-in and clearly documented**, never the headline feature. **Local files and microphone input are the always-safe paths.** Treat sampled material as you would in any production: clear it or transform it appropriately. See [roadmap.md#risks](../../roadmap.md#risks) and [05-youtube-ingest.md](05-youtube-ingest.md) for the full posture.
 
 ## Purpose
 
-Phase 4 makes `tekno` a sampler — the heart of hip-hop and a staple of techno. Up to here the engine has only ever *synthesized* sound (the kick of Phase 0, the synth/drum voices of Phase 1, sculpted by the pattern language of Phase 2 and the effects rack of Phase 3). Phase 4 adds the other half of the craft: take *recorded* audio — a drum break, a vocal chop, a few seconds grabbed from a record or a video — and **load it, chop it, stretch it, and pitch it** under the same pattern language and the same two-plane architecture.
+Phase 4 makes `strobe` a sampler — the heart of hip-hop and a staple of techno. Up to here the engine has only ever *synthesized* sound (the kick of Phase 0, the synth/drum voices of Phase 1, sculpted by the pattern language of Phase 2 and the effects rack of Phase 3). Phase 4 adds the other half of the craft: take *recorded* audio — a drum break, a vocal chop, a few seconds grabbed from a record or a video — and **load it, chop it, stretch it, and pitch it** under the same pattern language and the same two-plane architecture.
 
 The capability decomposes into a clean stack, each layer building on the one below:
 

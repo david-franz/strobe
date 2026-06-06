@@ -1,6 +1,6 @@
 # The pattern model
 
-`tekno`'s language is built on the **pattern** abstraction from [TidalCycles](https://tidalcycles.org/) (and its JS port [Strudel](https://strudel.cc/)). We adopt it deliberately because it is the proven functional vocabulary for this kind of music. This doc defines the model and the API built on top of it.
+`strobe`'s language is built on the **pattern** abstraction from [TidalCycles](https://tidalcycles.org/) (and its JS port [Strudel](https://strudel.cc/)). We adopt it deliberately because it is the proven functional vocabulary for this kind of music. This doc defines the model and the API built on top of it.
 
 ## The one idea
 
@@ -144,7 +144,7 @@ sound("bd*4")
 
 ## Why pure functions, not a sequencer object
 
-A traditional step sequencer stores state (the grid). To change it live you mutate shared state, which races with playback. Patterns store **no state** — they are recomputed from the current time every scheduler tick. Swapping a pattern is just pointing a track at a new function. This is the property that makes `tekno` safe and seamless to edit while it plays.
+A traditional step sequencer stores state (the grid). To change it live you mutate shared state, which races with playback. Patterns store **no state** — they are recomputed from the current time every scheduler tick. Swapping a pattern is just pointing a track at a new function. This is the property that makes `strobe` safe and seamless to edit while it plays.
 
 ## Testing patterns
 
