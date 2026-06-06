@@ -8,12 +8,10 @@
 //! pre-allocated voice pool with stealing.
 
 pub mod audio_io;
-pub mod effects;
-pub mod envelope;
+pub mod dsp;
 pub mod error;
-pub mod event;
-pub mod filter;
 pub mod graph;
+pub mod protocol;
 pub mod scheduler;
 pub mod stats;
 #[cfg(test)]
@@ -25,17 +23,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use audio_io::{AudioConfig, AudioState};
-use envelope::AdsrConfig;
+use dsp::envelope::AdsrConfig;
+use dsp::filter::{SvfConfig, SvfMode};
 use error::AudioError;
-use filter::{SvfConfig, SvfMode};
 use graph::InstrumentConfig;
-use ring::{ring, RingConsumer, RingProducer};
+use protocol::ring::{ring, RingConsumer, RingProducer};
 use stats::{EngineStats, EngineStatsShared};
 use voice_alloc::{InstrumentDef, VoicePool, SLOTS_PER_INSTRUMENT};
 use voices::drum::DrumConfig;
 use voices::oscillator::{OscConfig, OscKind};
-
-pub mod ring;
 
 const RING_CAPACITY: usize = 4096;
 
@@ -111,7 +107,7 @@ impl Engine {
         let consumer = self.consumer.take().expect("consumer available before start");
         let (device, config, cfg) = audio_io::open_output(sr, bf)?;
         let pool = VoicePool::new(&self.registry, cfg.sample_rate as f32, SLOTS_PER_INSTRUMENT);
-        let bus = effects::MasterBus::new(cfg.sample_rate as f32);
+        let bus = dsp::effects::MasterBus::new(cfg.sample_rate as f32);
         let state = AudioState::new(
             cfg.channels as usize,
             cfg.sample_rate as f32,
@@ -136,7 +132,7 @@ impl Engine {
     }
 
     pub fn push_events(&self, bytes: &[u8]) -> Result<(), EngineError> {
-        let recs = event::records_from_bytes(bytes).map_err(|_| EngineError::BadLength)?;
+        let recs = protocol::event::records_from_bytes(bytes).map_err(|_| EngineError::BadLength)?;
         let dropped = self.producer.push_batch(recs);
         if dropped > 0 {
             self.full_drops.fetch_add(dropped as u64, Ordering::Relaxed);
@@ -176,7 +172,7 @@ impl std::error::Error for EngineError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use event::EventRecord;
+    use crate::protocol::event::EventRecord;
 
     #[test]
     fn new_engine_is_idle_with_zero_clock() {

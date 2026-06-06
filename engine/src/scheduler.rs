@@ -8,9 +8,9 @@
 
 use std::sync::atomic::Ordering::Relaxed;
 
-use crate::effects::MasterBus;
-use crate::event::{self, Decoded};
-use crate::ring::RingConsumer;
+use crate::dsp::effects::MasterBus;
+use crate::protocol::event::{self, Decoded};
+use crate::protocol::ring::RingConsumer;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
 use crate::voices::ParamId;
@@ -104,9 +104,9 @@ pub fn dispatch_and_render(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::EventRecord;
+    use crate::protocol::event::EventRecord;
     use crate::graph::InstrumentConfig;
-    use crate::ring::{ring, RingProducer};
+    use crate::protocol::ring::{ring, RingProducer};
     use crate::voice_alloc::{InstrumentDef, VoicePool};
     use crate::voices::drum::DrumConfig;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -126,7 +126,7 @@ mod tests {
     }
 
     fn dispatch(c: &mut RingConsumer, base: u64, frames: u64, pool: &mut VoicePool, st: &EngineStatsShared) -> Vec<f32> {
-        let mut bus = crate::effects::MasterBus::new(SR);
+        let mut bus = crate::dsp::effects::MasterBus::new(SR);
         let mut l = vec![0.0; frames as usize];
         let mut r = vec![0.0; frames as usize];
         dispatch_and_render(c, base, frames, pool, &mut bus, st, &mut l, &mut r);
@@ -186,7 +186,7 @@ mod tests {
         });
         dispatch(&mut c, base, 256, &mut pool, &st);
         // Render a long tail; the released voice frees.
-        let mut bus = crate::effects::MasterBus::new(SR);
+        let mut bus = crate::dsp::effects::MasterBus::new(SR);
         let mut l = vec![0.0; SR as usize];
         let mut r = vec![0.0; SR as usize];
         dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &mut bus, &st, &mut l, &mut r);

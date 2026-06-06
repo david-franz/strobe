@@ -3,8 +3,8 @@
 //! an `InstrumentConfig`; `trigger`/`release`/`set_param` only touch plain state — no
 //! allocation on the hot path.
 
-use crate::envelope::Adsr;
-use crate::filter::Filter;
+use crate::dsp::envelope::Adsr;
+use crate::dsp::filter::Filter;
 use crate::graph::InstrumentConfig;
 use crate::voices::oscillator::{Oscillator, WavetableBank};
 use crate::voices::{pan_gains, ParamId, Voice};
@@ -116,8 +116,8 @@ impl Voice for SynthVoice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::envelope::{AdsrConfig, EnvMode};
-    use crate::filter::{SvfConfig, SvfMode};
+    use crate::dsp::envelope::{AdsrConfig, EnvMode};
+    use crate::dsp::filter::{SvfConfig, SvfMode};
     use crate::graph::InstrumentConfig;
     use crate::test_util::{goertzel, rms};
     use crate::voices::oscillator::{OscConfig, OscKind};

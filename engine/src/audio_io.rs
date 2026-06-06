@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use crate::effects::MasterBus;
+use crate::dsp::effects::MasterBus;
 use crate::error::AudioError;
-use crate::ring::RingConsumer;
+use crate::protocol::ring::RingConsumer;
 use crate::scheduler;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
@@ -182,8 +182,8 @@ pub fn play(stream: &cpal::Stream) -> Result<(), AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::EventRecord;
-    use crate::ring::{ring, RingProducer};
+    use crate::protocol::event::EventRecord;
+    use crate::protocol::ring::{ring, RingProducer};
     use crate::voice_alloc::{InstrumentDef, VoicePool};
     use crate::voices::drum::DrumConfig;
 

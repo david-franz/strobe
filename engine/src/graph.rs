@@ -2,8 +2,8 @@
 //! the (non-real-time) control channel. The engine builds a voice's DSP graph from this
 //! once, at pool-creation time; `NoteOn` only retriggers it (feature 06).
 
-use crate::envelope::AdsrConfig;
-use crate::filter::SvfConfig;
+use crate::dsp::envelope::AdsrConfig;
+use crate::dsp::filter::SvfConfig;
 use crate::voices::oscillator::OscConfig;
 
 /// A subtractive synth instrument: oscillator → filter → amp, with amp + filter
@@ -22,7 +22,7 @@ pub struct InstrumentConfig {
 
 impl Default for InstrumentConfig {
     fn default() -> Self {
-        use crate::envelope::EnvMode;
+        use crate::dsp::envelope::EnvMode;
         Self {
             osc: OscConfig::default(),
             svf: SvfConfig::default(),

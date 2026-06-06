@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use bytemuck::Zeroable;
 
-use crate::event::EventRecord;
+use crate::protocol::event::EventRecord;
 
 struct RingInner {
     buf: Box<[UnsafeCell<EventRecord>]>, // capacity = power of two

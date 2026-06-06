@@ -4,7 +4,7 @@
 //! plus white noise and direct percussive envelopes, so a one-shot self-finishes without
 //! a NoteOff. (The Phase 0 single `KickVoice` was retired when the voice pool took over.)
 
-use crate::filter::{Filter, SvfConfig, SvfMode};
+use crate::dsp::filter::{Filter, SvfConfig, SvfMode};
 use crate::voices::oscillator::{OscConfig, OscKind, Oscillator, WavetableBank};
 use crate::voices::{pan_gains, ParamId, Voice};
 
