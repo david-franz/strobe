@@ -35,7 +35,7 @@ This is the *live coding* / algorithmic-music space — the world of [TidalCycle
 
 The single most important design decision: **the interpreted control plane is separated from the native audio plane.** Real-time DSP never runs in garbage-collected JavaScript — GC pauses cause audible glitches. Instead, TypeScript schedules *time-stamped events* slightly ahead of time and hands them to the Rust engine over a lock-free queue.
 
-```
+```text
 ┌─────────────────────────── TypeScript (control plane) ───────────────────────────┐
 │  patterns  →  mini-notation  →  combinators  →  look-ahead scheduler              │
 │  live REPL / file-watch hot-reload   •   named tracks p1..pN (reassign live)       │
@@ -57,10 +57,11 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 | [docs/pattern-model.md](docs/pattern-model.md) | `Pattern` / `Hap` / `TimeSpan`, mini-notation, the combinator vocabulary |
 | [docs/event-protocol.md](docs/event-protocol.md) | The binary event format TS sends to the Rust engine |
 | [docs/roadmap.md](docs/roadmap.md) | The 6-phase build plan and what "done" means for each |
+| [docs/plan/](docs/plan/README.md) | The concrete, build-it-from-here plan — one detailed doc per feature, per phase |
 
 ## Project layout
 
-```
+```text
 tekno/
   engine/            # Rust audio core (cpal, fundsp, symphonia, ssstretch)
   bindings/
