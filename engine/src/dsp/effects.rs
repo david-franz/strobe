@@ -19,6 +19,9 @@ impl OnePoleHp {
     pub fn process(&mut self, x: f32) -> f32 {
         let y = self.r * (self.y1 + x - self.x1);
         self.x1 = x;
+        // Flush the recursive state out of the denormal range during long silences; denormals
+        // cause per-sample CPU spikes on some targets (a soft real-time hazard).
+        let y = if y.abs() < 1e-30 { 0.0 } else { y };
         self.y1 = y;
         y
     }
@@ -192,6 +195,17 @@ mod tests {
         bus.process(&mut l, &mut r);
         let peak = l.iter().chain(r.iter()).fold(0.0f32, |m, &x| m.max(x.abs()));
         assert!(peak <= ceiling + 1e-6, "peak {peak} within ceiling {ceiling}");
+    }
+
+    #[test]
+    fn high_pass_state_does_not_linger_as_a_denormal() {
+        let mut hp = OnePoleHp::new(25.0, SR);
+        hp.process(1.0); // excite, then go silent
+        for _ in 0..24_000 {
+            hp.process(0.0);
+        }
+        // Without the flush the state would still be a tiny (denormal-prone) nonzero here.
+        assert_eq!(hp.process(0.0), 0.0, "state flushed to exact zero");
     }
 
     #[test]
