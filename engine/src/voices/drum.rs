@@ -119,9 +119,10 @@ fn perc_amp(t: f32, attack_f: f32, decay_f: f32) -> f32 {
 /// between taps (distinct hand-claps).
 #[inline]
 fn clap_env(t: f32, taps: u32, spread_f: f32, burst_decay_f: f32, tail_f: f32) -> f32 {
-    let idx = core::cmp::min((t / spread_f) as u32, taps.saturating_sub(1));
+    let last = taps.saturating_sub(1);
+    let idx = core::cmp::min((t / spread_f) as u32, last);
     let onset = idx as f32 * spread_f;
-    let decay = if idx == taps - 1 { tail_f } else { burst_decay_f };
+    let decay = if idx == last { tail_f } else { burst_decay_f };
     (-(t - onset) / decay.max(1.0)).exp()
 }
 
@@ -278,7 +279,8 @@ impl Voice for DrumVoice {
     fn trigger(&mut self, freq: f32, vel: f32, _dur_frames: u64) {
         // Optional pitch tuning of the kick (sound("bd").note("c1")).
         if self.kind == DrumKind::Kick && freq > 20.0 {
-            let ratio = self.cfg.start_hz / self.cfg.body_hz;
+            // Preserve the configured pitch-sweep ratio while retuning; guard a zero body_hz.
+            let ratio = if self.cfg.body_hz > 0.0 { self.cfg.start_hz / self.cfg.body_hz } else { 1.0 };
             self.cfg.body_hz = freq;
             self.cfg.start_hz = freq * ratio;
         }
@@ -365,6 +367,22 @@ mod drumkit_tests {
         let early = zero_crossing_freq(&sig[..(0.02 * SR) as usize], SR);
         let late = zero_crossing_freq(&sig[(0.08 * SR) as usize..(0.18 * SR) as usize], SR);
         assert!(early > late * 1.5, "pitch slides down ({early} → {late})");
+    }
+
+    #[test]
+    fn clap_env_handles_zero_taps() {
+        // taps == 0 must not panic (was `taps - 1`) and must stay finite.
+        assert!(clap_env(100.0, 0, 200.0, 50.0, 5000.0).is_finite());
+    }
+
+    #[test]
+    fn kick_tuning_survives_zero_body_hz() {
+        // body_hz is a public config field; a zero must not divide to NaN when retuning.
+        let mut v = DrumVoice::new(&DrumConfig::kick(), SR);
+        v.cfg.body_hz = 0.0;
+        v.trigger(60.0, 1.0, 0);
+        let sig = render(&mut v, (0.05 * SR) as usize);
+        assert!(sig.iter().all(|x| x.is_finite()), "no NaN/inf from zero body_hz");
     }
 
     #[test]
