@@ -123,8 +123,10 @@ impl Filter {
     /// (already smooth), summed on top of the de-zippered base cutoff.
     #[inline]
     pub fn tick(&mut self, audio: f32, env_offset_hz: f32) -> f32 {
+        // `max`/`min` (not `clamp`) so a non-finite cutoff/offset is coerced to a safe value
+        // rather than propagated as NaN through the filter.
         let cutoff =
-            (self.smoother.process(self.base_cutoff) + env_offset_hz).clamp(20.0, self.nyquist - 1.0);
+            (self.smoother.process(self.base_cutoff) + env_offset_hz).max(20.0).min(self.nyquist - 1.0);
         let mut out = [0.0f32; 1];
         self.node.tick(&[audio, cutoff, self.q], &mut out);
         out[0]
@@ -150,6 +152,16 @@ mod tests {
         );
         let noise = white_noise(SR as usize, 0xC0FFEE);
         noise.iter().map(|&x| f.tick(x, 0.0)).collect()
+    }
+
+    #[test]
+    fn non_finite_cutoff_is_sanitized() {
+        let mut f = Filter::new(
+            SvfConfig { mode: SvfMode::Lowpass, cutoff_hz: 1000.0, q: 1.0, smooth_ms: 0.0 },
+            SR,
+        );
+        assert!(f.tick(0.5, f32::NAN).is_finite(), "NaN cutoff offset must not propagate");
+        assert!(f.tick(0.5, f32::INFINITY).is_finite(), "inf cutoff offset must not propagate");
     }
 
     #[test]

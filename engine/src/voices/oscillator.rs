@@ -130,7 +130,9 @@ impl Oscillator {
     /// One sample at `freq_hz` (clamped below Nyquist for the pitched kinds).
     #[inline]
     pub fn tick(&mut self, freq_hz: f32) -> f32 {
-        let f = freq_hz.clamp(0.0, self.nyquist - 1.0);
+        // `max`/`min` (not `clamp`) so a non-finite freq is coerced to a safe value rather than
+        // propagated as NaN through the oscillator and into the mix.
+        let f = freq_hz.max(0.0).min(self.nyquist - 1.0);
         let mut out = [0.0f32; 1];
         match &mut self.backend {
             Backend::Pitched(u) => {
@@ -182,6 +184,13 @@ mod tests {
 
     fn render(o: &mut Oscillator, freq: f32, n: usize) -> Vec<f32> {
         (0..n).map(|_| o.tick(freq)).collect()
+    }
+
+    #[test]
+    fn non_finite_frequency_is_sanitized() {
+        let mut o = osc(OscKind::Saw);
+        assert!(o.tick(f32::NAN).is_finite(), "NaN freq must not propagate");
+        assert!(o.tick(f32::INFINITY).is_finite(), "inf freq must not propagate");
     }
 
     #[test]
