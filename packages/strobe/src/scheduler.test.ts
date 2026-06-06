@@ -133,6 +133,26 @@ describe("look-ahead scheduling", () => {
     for (const b of pushed) expect(b.byteLength % 32).toBe(0);
   });
 
+  it("packs the hap value's instrument id, pitch and velocity into the NoteOn", () => {
+    const { engine, pushed, setFrame } = fakeEngine();
+    const clock = new Clock(engine);
+    clock.cps = 1;
+    clock.anchor(48000);
+    // A one-event pattern carrying a saw note at 220 Hz.
+    const note: Pattern<{ instrument: number; freq: number; vel: number }> = ({ begin, end }) =>
+      begin <= 0 && 0 < end
+        ? [{ whole: { begin: 0, end: 1 }, part: { begin: 0, end: 1 }, value: { instrument: 5, freq: 220, vel: 0.7 } }]
+        : [];
+    setTrack(1, note);
+    const sched = new Scheduler(engine, clock, { lookaheadS: 0.1 });
+    setFrame(0);
+    sched.tick();
+    const v = new DataView(pushed[0]);
+    expect(v.getFloat32(12, true)).toBeCloseTo(220, 3); // arg0 freq
+    expect(v.getFloat32(16, true)).toBeCloseTo(0.7, 5); // arg1 vel
+    expect(v.getFloat32(24, true)).toBe(5); // arg3 instrument
+  });
+
   it("does not emit events when no pattern is assigned", () => {
     const { engine, pushed, setFrame } = fakeEngine();
     const clock = new Clock(engine);

@@ -11,3 +11,7 @@ export { setcps, setbpm } from "./clock-singleton";
 export { p1 } from "./tracks";
 export { bdEvery, bdEuclid } from "./pattern";
 export type { Pattern, Hap, TimeSpan, SoundValue } from "./pattern";
+export { PRESETS, resolveNote } from "./presets";
+export type { PresetName, NoteValue } from "./presets";
+export { noteToHz, midiToHz, synth } from "./synth";
+export { drum } from "./drums";

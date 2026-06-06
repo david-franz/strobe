@@ -1,10 +1,9 @@
 //! Audio I/O: the cpal output stream, the per-buffer render loop, and the running
 //! frame counter that is the single source of truth for timing.
 //!
-//! This is the hard-real-time boundary (architecture.md "Audio plane — Rust"). The
-//! callback must fill its buffer on time, every time, so `render` does no allocation,
-//! no locking, and no JS calls — only ring draining (doc 02), voice synthesis (doc 03),
-//! and arithmetic.
+//! This is the hard-real-time boundary. The callback fills its buffer on time, every
+//! time: `render` drains events and renders the voice pool into preallocated stereo mix
+//! buffers (no allocation, no locking, no JS), then interleaves to the device.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -15,42 +14,36 @@ use crate::error::AudioError;
 use crate::ring::RingConsumer;
 use crate::scheduler;
 use crate::stats::EngineStatsShared;
-use crate::voices::drum::KickVoice;
+use crate::voice_alloc::VoicePool;
 
-/// The audio format we actually opened (may differ from the request).
+/// Largest buffer (frames) we preallocate mix scratch for. cpal buffers are far smaller;
+/// generous so the audio thread never reallocates.
+const MAX_BUFFER: usize = 16_384;
+
 #[derive(Debug, Clone, Copy)]
 pub struct AudioConfig {
-    /// Frames per second, e.g. 48_000.
     pub sample_rate: u32,
-    /// Requested frames per callback buffer (a *request*; hosts may ignore it).
     pub buffer_frames: u32,
-    /// Output channel count, e.g. 2.
     pub channels: u16,
 }
 
-/// Pick a default output device and an `f32` stream config, honoring the requested
-/// sample rate / buffer size when possible and otherwise falling back to the
-/// device default. Returns what we actually got.
 pub fn open_output(
     req_sr: Option<u32>,
     req_bf: Option<u32>,
 ) -> Result<(cpal::Device, cpal::StreamConfig, AudioConfig), AudioError> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or(AudioError::NoDevice)?;
+    let device = host.default_output_device().ok_or(AudioError::NoDevice)?;
 
     let default = device
         .default_output_config()
         .map_err(|e| AudioError::DefaultConfig(e.to_string()))?;
 
-    // Phase 0 only builds f32 streams; reject anything else rather than converting.
     if default.sample_format() != cpal::SampleFormat::F32 {
         return Err(AudioError::UnsupportedFormat);
     }
 
     let sample_rate = req_sr.unwrap_or(default.sample_rate().0);
-    let channels = default.channels().max(2); // render mono → fan to N
+    let channels = default.channels().max(2);
 
     let mut config: cpal::StreamConfig = default.config();
     config.sample_rate = cpal::SampleRate(sample_rate);
@@ -68,26 +61,45 @@ pub fn open_output(
     Ok((device, config, cfg))
 }
 
-/// State the audio thread owns/reads. Constructed before the stream, moved into the
-/// callback. No allocation happens after this point.
+/// State the audio thread owns. Constructed before the stream; no allocation after.
 pub struct AudioState {
     pub channels: usize,
     pub sample_rate: f32,
-    /// Shared *read* with `stats()`; the audio thread is the sole writer.
     pub frame_clock: Arc<AtomicU64>,
     pub consumer: RingConsumer,
-    pub kick: KickVoice,
+    pub pool: VoicePool,
     pub stats: Arc<EngineStatsShared>,
+    mix_l: Vec<f32>,
+    mix_r: Vec<f32>,
 }
 
-/// Build (but do not start) the cpal output stream around `st`.
+impl AudioState {
+    pub fn new(
+        channels: usize,
+        sample_rate: f32,
+        frame_clock: Arc<AtomicU64>,
+        consumer: RingConsumer,
+        pool: VoicePool,
+        stats: Arc<EngineStatsShared>,
+    ) -> Self {
+        Self {
+            channels,
+            sample_rate,
+            frame_clock,
+            consumer,
+            pool,
+            stats,
+            mix_l: vec![0.0; MAX_BUFFER],
+            mix_r: vec![0.0; MAX_BUFFER],
+        }
+    }
+}
+
 pub fn build_stream(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut st: AudioState,
 ) -> Result<cpal::Stream, AudioError> {
-    // The error callback runs on a cpal-internal thread on stream errors (e.g. the
-    // device is unplugged). Count it as an underrun; never allocate or panic.
     let err_stats = st.stats.clone();
     let err_fn = move |_e: cpal::StreamError| {
         err_stats.underruns.fetch_add(1, Ordering::Relaxed);
@@ -107,31 +119,51 @@ pub fn build_stream(
 }
 
 /// The per-buffer render loop. THIS IS THE HOT PATH.
-/// No allocation, no locking, no JS. Same code drives native and (later) WASM.
 #[inline]
 pub fn render(st: &mut AudioState, data: &mut [f32]) {
     let ch = st.channels;
     debug_assert!(ch >= 1);
     let frames = data.len() / ch;
-    let base = st.frame_clock.load(Ordering::Relaxed); // engine frame at buffer start
+    debug_assert!(frames <= MAX_BUFFER);
+    let frames = frames.min(MAX_BUFFER);
+    let base = st.frame_clock.load(Ordering::Relaxed);
 
-    // 1. Drain the ring: apply every event due this buffer at its in-buffer offset (doc 02).
-    scheduler::drain(&mut st.consumer, base, frames as u64, &mut st.kick, &st.stats);
+    // Zero the stereo mix for this buffer.
+    for i in 0..frames {
+        st.mix_l[i] = 0.0;
+        st.mix_r[i] = 0.0;
+    }
 
-    // 2. Render mono into the interleaved output, sample by sample.
+    // Drain events + render the pool in sample-accurate segments.
+    scheduler::dispatch_and_render(
+        &mut st.consumer,
+        base,
+        frames as u64,
+        &mut st.pool,
+        &st.stats,
+        &mut st.mix_l[..frames],
+        &mut st.mix_r[..frames],
+    );
+
+    // Interleave to the device: stereo on ch 0/1, mono = (L+R)/2, extra channels silent.
     for f in 0..frames {
-        let mono = st.kick.tick(); // one f32 per frame; 0.0 when idle
+        let l = st.mix_l[f];
+        let r = st.mix_r[f];
         let off = f * ch;
-        for c in 0..ch {
-            data[off + c] = mono; // fan mono to all channels (centered)
+        if ch == 1 {
+            data[off] = (l + r) * 0.5;
+        } else {
+            data[off] = l;
+            data[off + 1] = r;
+            for c in 2..ch {
+                data[off + c] = 0.0;
+            }
         }
     }
 
-    // 3. Advance the source-of-truth clock by exactly the frames we produced.
     st.frame_clock.store(base + frames as u64, Ordering::Relaxed);
 }
 
-/// Start the stream playing.
 pub fn play(stream: &cpal::Stream) -> Result<(), AudioError> {
     stream
         .play()
@@ -141,98 +173,97 @@ pub fn play(stream: &cpal::Stream) -> Result<(), AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::EventRecord;
+    use crate::ring::{ring, RingProducer};
+    use crate::voice_alloc::{InstrumentDef, VoicePool};
+    use crate::voices::drum::DrumConfig;
 
-    fn state(channels: usize) -> AudioState {
-        let (_producer, consumer) =
-            crate::ring::ring(64, Arc::new(AtomicU64::new(0)));
-        AudioState {
+    fn state(channels: usize) -> (AudioState, RingProducer) {
+        let drops = Arc::new(AtomicU64::new(0));
+        let (producer, consumer) = ring(256, drops);
+        let pool = VoicePool::new(&[(0, InstrumentDef::Drum(DrumConfig::kick()), 0)], 48_000.0, 4);
+        let st = AudioState::new(
             channels,
-            sample_rate: 48_000.0,
-            frame_clock: Arc::new(AtomicU64::new(0)),
+            48_000.0,
+            Arc::new(AtomicU64::new(0)),
             consumer,
-            kick: KickVoice::new(48_000.0),
-            stats: Arc::new(EngineStatsShared::default()),
-        }
+            pool,
+            Arc::new(EngineStatsShared::default()),
+        );
+        (st, producer)
+    }
+
+    fn kick_at(frame: u32) -> EventRecord {
+        EventRecord::note_on(1, frame, 1, 0.0, 1.0, 0.0, 0.0, 1)
     }
 
     #[test]
     fn frame_counter_is_exact_and_monotonic() {
-        let mut st = state(2);
-        let mut buf = vec![0.0f32; 256 * 2]; // 256 frames, stereo
-
-        render(&mut st, &mut buf);
-        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 256);
-
-        // A different buffer length advances by exactly data.len()/channels.
-        let mut buf2 = vec![0.0f32; 128 * 2];
-        render(&mut st, &mut buf2);
-        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 256 + 128);
-
-        // Never decreases.
-        let before = st.frame_clock.load(Ordering::Relaxed);
-        render(&mut st, &mut buf);
-        assert!(st.frame_clock.load(Ordering::Relaxed) >= before);
-    }
-
-    #[test]
-    fn channel_fan_out_is_centered() {
-        let mut st = state(2);
-        st.kick.trigger_at(0, 55.0, 1.0, 0.0);
+        let (mut st, _p) = state(2);
         let mut buf = vec![0.0f32; 256 * 2];
         render(&mut st, &mut buf);
-        // Mono is fanned to both channels: every L equals its R.
-        for f in 0..256 {
-            assert_eq!(buf[f * 2], buf[f * 2 + 1], "L==R at frame {f}");
-        }
-        // The voice actually produced sound.
-        assert!(buf.iter().any(|&s| s.abs() > 1e-6));
-    }
-
-    #[test]
-    fn mono_device_renders() {
-        let mut st = state(1);
-        st.kick.trigger_at(0, 55.0, 1.0, 0.0);
-        let mut buf = vec![0.0f32; 256];
-        render(&mut st, &mut buf);
-        assert!(buf.iter().any(|&s| s.abs() > 1e-6), "voice produced signal");
         assert_eq!(st.frame_clock.load(Ordering::Relaxed), 256);
+        let mut buf2 = vec![0.0f32; 128 * 2];
+        render(&mut st, &mut buf2);
+        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 384);
     }
 
     #[test]
-    fn idle_voice_renders_silence() {
-        let mut st = state(2);
+    fn idle_pool_renders_silence() {
+        let (mut st, _p) = state(2);
         let mut buf = vec![1.0f32; 16 * 2];
         render(&mut st, &mut buf);
         assert!(buf.iter().all(|&s| s == 0.0));
     }
 
-    // Real-device tests: require a working default output device, so they are
-    // #[ignore]d in CI/headless and run manually with `cargo test -- --ignored`.
+    #[test]
+    fn centered_voice_fans_equally_to_both_channels() {
+        let (mut st, p) = state(2);
+        p.try_push(kick_at(0));
+        let mut buf = vec![0.0f32; 256 * 2];
+        render(&mut st, &mut buf);
+        for f in 0..256 {
+            assert_eq!(buf[f * 2], buf[f * 2 + 1], "centered kick → L==R at {f}");
+        }
+        assert!(buf.iter().any(|&s| s.abs() > 1e-6), "kick produced sound");
+    }
+
+    #[test]
+    fn mono_device_downmixes() {
+        let (mut st, p) = state(1);
+        p.try_push(kick_at(0));
+        let mut buf = vec![0.0f32; 256];
+        render(&mut st, &mut buf);
+        assert!(buf.iter().any(|&s| s.abs() > 1e-6));
+        assert_eq!(st.frame_clock.load(Ordering::Relaxed), 256);
+    }
+
     #[test]
     #[ignore = "requires a real audio output device"]
     fn stream_opens_and_advances_clock() {
         use std::time::Duration;
-        let (device, config, cfg) =
-            open_output(Some(48_000), Some(256)).expect("open default output");
+        let (device, config, cfg) = open_output(Some(48_000), Some(256)).expect("open output");
         let frame_clock = Arc::new(AtomicU64::new(0));
-        let (_producer, consumer) = crate::ring::ring(4096, Arc::new(AtomicU64::new(0)));
-        let st = AudioState {
-            channels: cfg.channels as usize,
-            sample_rate: cfg.sample_rate as f32,
-            frame_clock: frame_clock.clone(),
+        let drops = Arc::new(AtomicU64::new(0));
+        let (_p, consumer) = ring(4096, drops);
+        let pool = VoicePool::new(
+            &[(0, InstrumentDef::Drum(DrumConfig::kick()), 0)],
+            cfg.sample_rate as f32,
+            4,
+        );
+        let st = AudioState::new(
+            cfg.channels as usize,
+            cfg.sample_rate as f32,
+            frame_clock.clone(),
             consumer,
-            kick: KickVoice::new(cfg.sample_rate as f32),
-            stats: Arc::new(EngineStatsShared::default()),
-        };
-        let stream = build_stream(&device, &config, st).expect("build stream");
+            pool,
+            Arc::new(EngineStatsShared::default()),
+        );
+        let stream = build_stream(&device, &config, st).expect("build");
         play(&stream).expect("play");
         std::thread::sleep(Duration::from_millis(200));
         let advanced = frame_clock.load(Ordering::Relaxed);
         let expected = (0.2 * cfg.sample_rate as f64) as u64;
-        // Within one large buffer of the expected frame count.
-        assert!(
-            advanced.abs_diff(expected) < 4096,
-            "advanced {advanced}, expected ~{expected}"
-        );
+        assert!(advanced.abs_diff(expected) < 4096);
     }
 }

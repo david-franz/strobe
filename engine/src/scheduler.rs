@@ -1,136 +1,197 @@
 //! Consumer side of the event ring — the audio-thread integration point.
 //!
-//! `drain` is called once per buffer from the render loop (doc 01) with the
-//! buffer-start frame `base` and the buffer length `frames`. It applies every event
-//! due within this buffer (`frame ≤ base + frames`) at its exact in-buffer sample
-//! offset (`frame - base`), so the kick lands on its sample-accurate frame rather
-//! than merely at the start of the buffer. HOT PATH — no alloc, no locks.
+//! `dispatch_and_render` drains the events due in this buffer and renders the voice pool
+//! in **sample-accurate segments**: it renders the active voices up to the next event's
+//! in-buffer offset, applies that event (which may trigger/steal a voice), then continues
+//! — so a note lands on its exact frame, not merely at the start of the buffer. HOT PATH:
+//! no alloc, no locks.
 
 use std::sync::atomic::Ordering::Relaxed;
 
 use crate::event::{self, Decoded};
 use crate::ring::RingConsumer;
 use crate::stats::EngineStatsShared;
-use crate::voices::drum::KickVoice;
+use crate::voice_alloc::VoicePool;
+use crate::voices::ParamId;
 
-pub fn drain(
+fn apply(dec: Decoded, pool: &mut VoicePool, stats: &EngineStatsShared) {
+    match dec {
+        Decoded::NoteOn { voice, freq, vel, dur_frames, instrument, .. } => {
+            pool.note_on(instrument as u32, voice, freq, vel, dur_frames.max(0.0) as u64);
+        }
+        Decoded::NoteOff { voice } => pool.note_off(voice),
+        Decoded::ParamSet { param, value, .. } => {
+            if let Some(p) = ParamId::from_u32(param) {
+                pool.set_param_all(p, value);
+            }
+        }
+        Decoded::Tempo { .. } | Decoded::Nop => {}
+        Decoded::Unknown(_) => {
+            stats.unknown_op.fetch_add(1, Relaxed);
+        }
+    }
+}
+
+/// Apply every event whose in-buffer offset is `<= pos` (including late events), then
+/// return the offset of the next event due *later* in this buffer (or `None`).
+fn apply_due(
     consumer: &mut RingConsumer,
-    base: u64,   // engine frame at buffer start
-    frames: u64, // buffer length in frames
-    kick: &mut KickVoice,
+    base: u64,
+    buffer_end: u64,
+    pos: usize,
+    pool: &mut VoicePool,
     stats: &EngineStatsShared,
-) {
-    let buffer_end = base + frames; // exclusive upper bound for "due this buffer"
-    let mut consumed = 0usize;
-    let available = consumer.len();
-
-    // Events are FIFO and enqueued in non-decreasing frame order within a tick, so we
-    // can stop at the first event that is not yet due. Late events sit at the front.
-    while consumed < available {
-        let r = consumer.peek_at(consumed);
-
+) -> Option<usize> {
+    while consumer.len() > 0 {
+        let r = consumer.peek_at(0);
         let dec = match event::decode(&r) {
             Ok(d) => d,
             Err(()) => {
                 stats.bad_version.fetch_add(1, Relaxed);
-                consumed += 1;
+                consumer.advance(1);
                 continue;
             }
         };
-
-        let ev_frame = r.frame as u64;
-        let offset: usize = if ev_frame < base {
-            // LATE: arrived past its frame. Apply immediately at offset 0, count it.
-            stats.late_events.fetch_add(1, Relaxed);
-            0
-        } else if ev_frame >= buffer_end {
-            break; // not due yet — leave it for a later buffer
-        } else {
-            (ev_frame - base) as usize // exact in-buffer sample offset
-        };
-
-        match dec {
-            Decoded::NoteOn {
-                freq,
-                vel,
-                dur_frames,
-                ..
-            } => {
-                kick.trigger_at(offset, freq, vel, dur_frames);
-            }
-            Decoded::Tempo { .. } => { /* Phase 0: no DSP effect; timing is baked into frames */ }
-            Decoded::Nop => {}
-            Decoded::Unknown(_op) => {
-                stats.unknown_op.fetch_add(1, Relaxed);
-            }
+        let evf = r.frame as u64;
+        if evf >= buffer_end {
+            return None; // not due this buffer — leave for a later one
         }
-        consumed += 1;
+        let off = if evf < base { 0 } else { (evf - base) as usize };
+        if off <= pos {
+            if evf < base {
+                stats.late_events.fetch_add(1, Relaxed);
+            }
+            apply(dec, pool, stats);
+            consumer.advance(1);
+        } else {
+            return Some(off);
+        }
     }
+    None
+}
 
-    consumer.advance(consumed);
+pub fn dispatch_and_render(
+    consumer: &mut RingConsumer,
+    base: u64,
+    frames: u64,
+    pool: &mut VoicePool,
+    stats: &EngineStatsShared,
+    mix_l: &mut [f32],
+    mix_r: &mut [f32],
+) {
+    let buffer_end = base + frames;
+    let frames = frames as usize;
+    let mut pos = 0usize;
+    loop {
+        let next = apply_due(consumer, base, buffer_end, pos, pool, stats).unwrap_or(frames);
+        let seg_end = next.min(frames);
+        pool.render_segment(mix_l, mix_r, pos, seg_end);
+        pos = seg_end;
+        if pos >= frames {
+            break;
+        }
+    }
+    pool.reap();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::event::EventRecord;
-    use crate::ring::ring;
+    use crate::graph::InstrumentConfig;
+    use crate::ring::{ring, RingProducer};
+    use crate::voice_alloc::{InstrumentDef, VoicePool};
+    use crate::voices::drum::DrumConfig;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
 
-    fn setup() -> (
-        crate::ring::RingProducer,
-        RingConsumer,
-        KickVoice,
-        Arc<EngineStatsShared>,
-    ) {
+    const SR: f32 = 48_000.0;
+
+    fn setup(def: InstrumentDef) -> (RingProducer, RingConsumer, VoicePool, Arc<EngineStatsShared>) {
         let drops = Arc::new(AtomicU64::new(0));
-        let (p, c) = ring(64, drops);
-        (p, c, KickVoice::new(48_000.0), Arc::new(EngineStatsShared::default()))
+        let (p, c) = ring(256, drops);
+        let pool = VoicePool::new(&[(0, def, 0)], SR, 8);
+        (p, c, pool, Arc::new(EngineStatsShared::default()))
+    }
+
+    fn note_on(track: u16, frame: u32, voice: u32, freq: f32, dur: f32) -> EventRecord {
+        EventRecord::note_on(track, frame, voice, freq, 0.9, dur, 0.0, voice)
+    }
+
+    fn dispatch(c: &mut RingConsumer, base: u64, frames: u64, pool: &mut VoicePool, st: &EngineStatsShared) -> Vec<f32> {
+        let mut l = vec![0.0; frames as usize];
+        let mut r = vec![0.0; frames as usize];
+        dispatch_and_render(c, base, frames, pool, st, &mut l, &mut r);
+        l
     }
 
     #[test]
-    fn due_this_buffer_selection() {
-        let (p, mut c, mut kick, stats) = setup();
+    fn note_on_triggers_a_voice_due_this_buffer() {
+        let (p, mut c, mut pool, st) = setup(InstrumentDef::Drum(DrumConfig::kick()));
         let base = 1000u64;
-        let frames = 256u64;
-        // late, on-time, mid, last-in-buffer, future
-        p.try_push(EventRecord::note_on(1, (base - 5) as u32, 0, 55.0, 0.9, 0.0, 0.0, 0));
-        p.try_push(EventRecord::note_on(1, base as u32, 1, 55.0, 0.9, 0.0, 0.0, 1));
-        p.try_push(EventRecord::note_on(1, (base + 10) as u32, 2, 55.0, 0.9, 0.0, 0.0, 2));
-        p.try_push(EventRecord::note_on(1, (base + frames - 1) as u32, 3, 55.0, 0.9, 0.0, 0.0, 3));
-        p.try_push(EventRecord::note_on(1, (base + frames + 50) as u32, 4, 55.0, 0.9, 0.0, 0.0, 4));
-
-        drain(&mut c, base, frames, &mut kick, &stats);
-
-        // Four applied (incl. the late one), the future one remains for the next buffer.
-        assert_eq!(c.len(), 1);
-        assert_eq!(c.peek_at(0).frame, (base + frames + 50) as u32);
-        assert_eq!(stats.late_events.load(Ordering::Relaxed), 1);
+        p.try_push(note_on(1, base as u32, 1, 0.0, 0.0)); // due now
+        p.try_push(note_on(1, (base + 5000) as u32, 2, 0.0, 0.0)); // far future
+        dispatch(&mut c, base, 256, &mut pool, &st);
+        assert_eq!(pool.active_count(), 1, "only the due note triggered");
+        assert_eq!(c.len(), 1, "future event remains for a later buffer");
     }
 
     #[test]
-    fn sub_buffer_offset_is_exact() {
-        let (p, mut c, mut kick, stats) = setup();
-        let base = 500u64;
-        p.try_push(EventRecord::note_on(1, (base + 37) as u32, 0, 55.0, 0.9, 0.0, 0.0, 0));
-        drain(&mut c, base, 128, &mut kick, &stats);
-        assert!(kick.active);
-        assert_eq!(kick.test_pending_offset(), 37);
+    fn sub_buffer_offset_places_the_onset_exactly() {
+        let (p, mut c, mut pool, st) = setup(InstrumentDef::Drum(DrumConfig::kick()));
+        let base = 0u64;
+        let offset = 100u32;
+        p.try_push(note_on(1, offset, 1, 0.0, 0.0));
+        let l = dispatch(&mut c, base, 256, &mut pool, &st);
+        assert!(l[..offset as usize].iter().all(|&s| s == 0.0), "silent before the onset");
+        assert!(l[offset as usize..].iter().any(|&s| s.abs() > 1e-6), "sound from the onset");
     }
 
     #[test]
-    fn version_and_opcode_robustness() {
-        let (p, mut c, mut kick, stats) = setup();
-        let mut bad_ver = EventRecord::note_on(1, 0, 0, 55.0, 0.9, 0.0, 0.0, 0);
-        bad_ver.version = 2;
-        let mut unknown = EventRecord::note_on(1, 1, 0, 55.0, 0.9, 0.0, 0.0, 0);
-        unknown.opcode = 0x99;
-        p.try_push(bad_ver);
-        p.try_push(unknown);
-        drain(&mut c, 0, 128, &mut kick, &stats);
-        assert_eq!(stats.bad_version.load(Ordering::Relaxed), 1);
-        assert_eq!(stats.unknown_op.load(Ordering::Relaxed), 1);
-        assert_eq!(c.len(), 0); // both consumed, no panic
+    fn late_event_is_applied_and_counted() {
+        let (p, mut c, mut pool, st) = setup(InstrumentDef::Drum(DrumConfig::kick()));
+        let base = 1000u64;
+        p.try_push(note_on(1, (base - 50) as u32, 1, 0.0, 0.0)); // late
+        dispatch(&mut c, base, 256, &mut pool, &st);
+        assert_eq!(pool.active_count(), 1, "late note still played");
+        assert_eq!(st.late_events.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn note_off_releases_a_held_synth_voice() {
+        let (p, mut c, mut pool, st) =
+            setup(InstrumentDef::Synth(InstrumentConfig::default()));
+        let base = 0u64;
+        p.try_push(note_on(1, 0, 7, 220.0, 0.0)); // held (dur 0)
+        // NoteOff for handle 7 later in the same buffer.
+        p.try_push(EventRecord {
+            version: 1,
+            opcode: 0x02,
+            track: 1,
+            frame: 100,
+            vp: 7,
+            arg0: 0.0,
+            arg1: 0.0,
+            arg2: 0.0,
+            arg3: 0.0,
+            flags_seq: 0,
+        });
+        dispatch(&mut c, base, 256, &mut pool, &st);
+        // Render a long tail; the released voice frees.
+        let mut l = vec![0.0; SR as usize];
+        let mut r = vec![0.0; SR as usize];
+        dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &st, &mut l, &mut r);
+        assert_eq!(pool.active_count(), 0, "held voice released by NoteOff then freed");
+    }
+
+    #[test]
+    fn unknown_opcode_is_counted_and_skipped() {
+        let (p, mut c, mut pool, st) = setup(InstrumentDef::Drum(DrumConfig::kick()));
+        let mut rec = note_on(1, 0, 1, 0.0, 0.0);
+        rec.opcode = 0x55; // unimplemented
+        p.try_push(rec);
+        dispatch(&mut c, 0, 256, &mut pool, &st);
+        assert_eq!(st.unknown_op.load(Ordering::Relaxed), 1);
+        assert_eq!(pool.active_count(), 0);
     }
 }

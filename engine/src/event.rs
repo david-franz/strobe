@@ -102,6 +102,14 @@ pub enum Decoded {
         dur_frames: f32,
         instrument: f32,
     },
+    NoteOff {
+        voice: u32,
+    },
+    ParamSet {
+        track: u16,
+        param: u32,
+        value: f32,
+    },
     Tempo {
         cps: f32,
     },
@@ -124,6 +132,12 @@ pub fn decode(r: &EventRecord) -> Result<Decoded, ()> {
             vel: r.arg1,
             dur_frames: r.arg2,
             instrument: r.arg3,
+        },
+        op::NOTE_OFF => Decoded::NoteOff { voice: r.vp },
+        op::PARAM_SET => Decoded::ParamSet {
+            track: r.track,
+            param: r.vp,
+            value: r.arg0,
         },
         op::TEMPO => Decoded::Tempo { cps: r.arg0 },
         op::NOP => Decoded::Nop,

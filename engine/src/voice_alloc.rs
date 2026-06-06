@@ -1,0 +1,330 @@
+//! Voice allocation: a fixed, pre-allocated pool of physical voices with per-instrument
+//! sub-pools, oldest/quietest voice stealing, choke groups (hats), and handle→voice
+//! resolution so a `NoteOff` finds the right voice even after a steal. Real-time-safe:
+//! no allocation, no locks on the audio thread (the slot array is built once at start).
+
+use crate::graph::InstrumentConfig;
+use crate::voices::drum::{DrumConfig, DrumVoice};
+use crate::voices::oscillator::WavetableBank;
+use crate::voices::synth::SynthVoice;
+use crate::voices::{ParamId, Voice};
+
+/// Pre-built voice slots per instrument. Generous — the roadmap's 16-voice bar fits with
+/// headroom.
+pub const SLOTS_PER_INSTRUMENT: usize = 24;
+
+/// How the engine builds a voice for an instrument id.
+pub enum InstrumentDef {
+    Synth(InstrumentConfig),
+    Drum(DrumConfig),
+}
+
+fn build_voice(def: &InstrumentDef, sr: f32, bank: &WavetableBank) -> Box<dyn Voice> {
+    match def {
+        InstrumentDef::Synth(c) => Box::new(SynthVoice::new(c, sr, bank)),
+        InstrumentDef::Drum(c) => Box::new(DrumVoice::new(c, sr)),
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+enum SlotState {
+    Free,
+    Active,
+    Releasing,
+}
+
+struct Slot {
+    voice: Box<dyn Voice>,
+    instrument: u32,
+    choke: u8, // 0 = none
+    state: SlotState,
+    handle: u32, // TS-supplied NoteOn handle; 0 = none
+    started: u64,
+    last_level: f32,
+}
+
+/// The fixed pool. Built once; `note_on`/`note_off`/`set_param`/`reap`/`render_segment`
+/// only touch the pre-allocated slots.
+pub struct VoicePool {
+    slots: Vec<Slot>,
+    frame: u64,
+}
+
+impl VoicePool {
+    /// Build `slots_per` voices for each `(instrument_id, def, choke_group)`.
+    pub fn new(entries: &[(u32, InstrumentDef, u8)], sr: f32, slots_per: usize) -> Self {
+        let bank = WavetableBank::new();
+        let mut slots = Vec::with_capacity(entries.len() * slots_per);
+        for (id, def, choke) in entries {
+            for _ in 0..slots_per {
+                slots.push(Slot {
+                    voice: build_voice(def, sr, &bank),
+                    instrument: *id,
+                    choke: *choke,
+                    state: SlotState::Free,
+                    handle: 0,
+                    started: 0,
+                    last_level: 0.0,
+                });
+            }
+        }
+        Self { slots, frame: 0 }
+    }
+
+    pub fn active_count(&self) -> usize {
+        self.slots.iter().filter(|s| s.state != SlotState::Free).count()
+    }
+
+    fn find(&self, instrument: u32, state: SlotState) -> Option<usize> {
+        self.slots
+            .iter()
+            .position(|s| s.instrument == instrument && s.state == state)
+    }
+
+    /// Best steal victim within an instrument's sub-pool: prefer releasing, then quietest,
+    /// then oldest.
+    fn steal_victim(&self, instrument: u32) -> Option<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.instrument == instrument)
+            .min_by(|(_, a), (_, b)| {
+                let ka = (
+                    if a.state == SlotState::Releasing { 0u8 } else { 1 },
+                    a.last_level,
+                    a.started,
+                );
+                let kb = (
+                    if b.state == SlotState::Releasing { 0u8 } else { 1 },
+                    b.last_level,
+                    b.started,
+                );
+                ka.0
+                    .cmp(&kb.0)
+                    .then(ka.1.partial_cmp(&kb.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .then(ka.2.cmp(&kb.2))
+            })
+            .map(|(i, _)| i)
+    }
+
+    fn release_choke_group(&mut self, choke: u8) {
+        for s in self.slots.iter_mut() {
+            if s.choke == choke && s.state == SlotState::Active {
+                s.voice.release();
+                s.state = SlotState::Releasing;
+            }
+        }
+    }
+
+    /// Apply a `NoteOn`: choke, find/steal a slot, trigger the voice.
+    pub fn note_on(&mut self, instrument: u32, handle: u32, freq: f32, vel: f32, dur_frames: u64) {
+        let choke = self
+            .slots
+            .iter()
+            .find(|s| s.instrument == instrument)
+            .map(|s| s.choke)
+            .unwrap_or(0);
+        if choke != 0 {
+            self.release_choke_group(choke);
+        }
+
+        let slot = self
+            .find(instrument, SlotState::Free)
+            .or_else(|| self.find(instrument, SlotState::Releasing))
+            .or_else(|| self.steal_victim(instrument));
+        let Some(slot) = slot else {
+            return; // unknown instrument → drop
+        };
+
+        self.frame += 1;
+        let frame = self.frame;
+        let s = &mut self.slots[slot];
+        s.handle = handle;
+        s.state = SlotState::Active;
+        s.started = frame;
+        s.last_level = vel;
+        s.voice.trigger(freq, vel, dur_frames);
+    }
+
+    /// Apply a `NoteOff` by handle. A stale handle (already stolen/finished) is a no-op.
+    pub fn note_off(&mut self, handle: u32) {
+        if handle == 0 {
+            return;
+        }
+        if let Some(s) = self
+            .slots
+            .iter_mut()
+            .find(|s| s.handle == handle && s.state != SlotState::Free)
+        {
+            s.voice.release();
+            s.state = SlotState::Releasing;
+        }
+    }
+
+    /// Live-edit a parameter on every active voice (Phase 1: broadcast; per-track scoping
+    /// arrives with the pattern engine in Phase 2).
+    pub fn set_param_all(&mut self, param: ParamId, value: f32) {
+        for s in self.slots.iter_mut() {
+            if s.state != SlotState::Free {
+                s.voice.set_param(param, value);
+            }
+        }
+    }
+
+    /// Render `[start, end)` of this buffer for every sounding voice, **adding** into the
+    /// stereo mix.
+    pub fn render_segment(&mut self, mix_l: &mut [f32], mix_r: &mut [f32], start: usize, end: usize) {
+        if end <= start {
+            return;
+        }
+        for s in self.slots.iter_mut() {
+            if s.state != SlotState::Free {
+                s.voice.render(&mut mix_l[start..end], &mut mix_r[start..end]);
+            }
+        }
+    }
+
+    /// Reclaim finished voices and refresh levels for stealing decisions. Once per buffer.
+    pub fn reap(&mut self) {
+        for s in self.slots.iter_mut() {
+            if s.state != SlotState::Free {
+                s.last_level = s.voice.current_level();
+                if s.voice.is_finished() {
+                    s.state = SlotState::Free;
+                    s.handle = 0;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::voices::drum::DrumConfig;
+
+    const SR: f32 = 48_000.0;
+
+    /// A minimal Voice for exercising the allocator's bookkeeping precisely.
+    struct MockVoice {
+        level: f32,
+    }
+    impl MockVoice {
+        fn boxed(level: f32) -> Box<dyn Voice> {
+            Box::new(MockVoice { level })
+        }
+    }
+    impl Voice for MockVoice {
+        fn trigger(&mut self, _f: f32, vel: f32, _d: u64) {
+            self.level = vel;
+        }
+        fn release(&mut self) {}
+        fn is_finished(&self) -> bool {
+            false
+        }
+        fn current_level(&self) -> f32 {
+            self.level
+        }
+        fn render(&mut self, _l: &mut [f32], _r: &mut [f32]) {}
+        fn set_param(&mut self, _p: ParamId, _v: f32) {}
+    }
+
+    fn pool_of(entries: Vec<(u32, u8, Box<dyn Voice>)>) -> VoicePool {
+        let slots = entries
+            .into_iter()
+            .map(|(instrument, choke, voice)| Slot {
+                voice,
+                instrument,
+                choke,
+                state: SlotState::Free,
+                handle: 0,
+                started: 0,
+                last_level: 0.0,
+            })
+            .collect();
+        VoicePool { slots, frame: 0 }
+    }
+
+    /// A pool with `n` voices of instrument 0 (choke 0).
+    fn synth_pool(n: usize) -> VoicePool {
+        pool_of((0..n).map(|_| (0u32, 0u8, MockVoice::boxed(1.0))).collect())
+    }
+
+    #[test]
+    fn allocates_sixteen_simultaneous_voices() {
+        let mut p = synth_pool(24);
+        for h in 1..=16 {
+            p.note_on(0, h, 220.0, 1.0, 0);
+        }
+        assert_eq!(p.active_count(), 16);
+    }
+
+    #[test]
+    fn full_subpool_steals_rather_than_growing() {
+        let mut p = synth_pool(4);
+        for h in 1..=4 {
+            p.note_on(0, h, 220.0, 1.0, 0);
+        }
+        assert_eq!(p.active_count(), 4);
+        p.note_on(0, 99, 220.0, 1.0, 0); // 5th → must steal
+        assert_eq!(p.active_count(), 4, "never exceeds the sub-pool");
+        // handle 99 now owns a slot.
+        assert!(p.slots.iter().any(|s| s.handle == 99));
+    }
+
+    #[test]
+    fn note_off_releases_correct_voice_after_an_unrelated_steal() {
+        let mut p = synth_pool(2);
+        // A (handle 1) loud & newest so it is not the steal victim.
+        p.note_on(0, 1, 220.0, 1.0, 0);
+        p.note_on(0, 2, 220.0, 0.1, 0); // B, quiet → preferred victim
+        p.note_on(0, 3, 220.0, 1.0, 0); // steals B (quietest)
+        assert!(!p.slots.iter().any(|s| s.handle == 2), "B was stolen");
+        // A's NoteOff still releases A.
+        p.note_off(1);
+        let a = p.slots.iter().find(|s| s.handle == 1).unwrap();
+        assert_eq!(a.state, SlotState::Releasing);
+    }
+
+    #[test]
+    fn stale_note_off_is_a_harmless_no_op() {
+        let mut p = synth_pool(2);
+        p.note_on(0, 1, 220.0, 1.0, 0);
+        let before: Vec<_> = p.slots.iter().map(|s| s.state).collect();
+        p.note_off(999); // never allocated
+        let after: Vec<_> = p.slots.iter().map(|s| s.state).collect();
+        assert_eq!(before, after, "no state changed");
+    }
+
+    #[test]
+    fn reap_frees_finished_voices() {
+        // A real one-shot closed hat finishes on its own after its short decay.
+        let mut p = VoicePool::new(
+            &[(3, InstrumentDef::Drum(DrumConfig::closed_hat()), 1)],
+            SR,
+            2,
+        );
+        p.note_on(3, 1, 0.0, 1.0, 0);
+        assert_eq!(p.active_count(), 1);
+        let mut l = vec![0.0; SR as usize];
+        let mut r = vec![0.0; SR as usize];
+        p.render_segment(&mut l, &mut r, 0, SR as usize); // render 1 s → hat ends
+        p.reap();
+        assert_eq!(p.active_count(), 0, "finished voice reclaimed");
+    }
+
+    #[test]
+    fn choke_group_cuts_a_ringing_voice() {
+        // Two instruments sharing choke group 1 (closed + open hat).
+        let mut p = pool_of(vec![
+            (3, 1, MockVoice::boxed(1.0)), // closed hat
+            (4, 1, MockVoice::boxed(1.0)), // open hat
+        ]);
+        p.note_on(4, 1, 0.0, 1.0, 0); // open hat rings
+        assert_eq!(p.active_count(), 1);
+        p.note_on(3, 2, 0.0, 1.0, 0); // closed hat → chokes the open hat
+        let oh = p.slots.iter().find(|s| s.instrument == 4).unwrap();
+        assert_eq!(oh.state, SlotState::Releasing, "open hat choked by closed hat");
+    }
+}

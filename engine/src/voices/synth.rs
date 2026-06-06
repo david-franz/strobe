@@ -19,6 +19,11 @@ pub struct SynthVoice {
     vel: f32,
     gain: f32,
     pan: f32,
+    // Timed gate: a note triggered with dur_frames>0 auto-releases after that many
+    // frames (so a pattern note with a known length needs no separate NoteOff); a note
+    // triggered with dur_frames==0 is held until an explicit `release()` (NoteOff).
+    t: u64,
+    gate_at: Option<u64>,
 }
 
 impl SynthVoice {
@@ -33,6 +38,8 @@ impl SynthVoice {
             vel: 1.0,
             gain: cfg.gain,
             pan: cfg.pan,
+            t: 0,
+            gate_at: None,
         }
     }
 }
@@ -41,10 +48,13 @@ impl Voice for SynthVoice {
     fn trigger(&mut self, freq: f32, vel: f32, dur_frames: u64) {
         self.freq = freq;
         self.vel = vel.clamp(0.0, 1.0);
+        self.t = 0;
+        self.gate_at = if dur_frames > 0 { Some(dur_frames) } else { None };
         self.osc.reset(); // honors phase_reset internally
         self.filter.reset();
-        self.amp_env.trigger(dur_frames);
-        self.filter_env.trigger(dur_frames);
+        // Envelopes are gated; the timed gate (or an explicit NoteOff) drives the release.
+        self.amp_env.trigger(0);
+        self.filter_env.trigger(0);
     }
 
     fn release(&mut self) {
@@ -63,6 +73,15 @@ impl Voice for SynthVoice {
     fn render(&mut self, out_l: &mut [f32], out_r: &mut [f32]) {
         let (pl, pr) = pan_gains(self.pan);
         for (l, r) in out_l.iter_mut().zip(out_r.iter_mut()) {
+            // Timed gate: auto-release once the note's duration elapses.
+            if let Some(g) = self.gate_at {
+                if self.t == g {
+                    self.amp_env.gate_off();
+                    self.filter_env.gate_off();
+                    self.gate_at = None;
+                }
+            }
+            self.t += 1;
             let raw = self.osc.tick(self.freq);
             let fenv = self.filter_env.tick();
             let filtered = self.filter.tick(raw, fenv * self.env_amount_hz);

@@ -9,6 +9,7 @@ import type { Engine } from "./engine";
 import type { Clock } from "./clock";
 import { getTrack } from "./tracks";
 import { queryArc, type Hap } from "./pattern";
+import { resolveNote } from "./presets";
 
 const REC = 32; // bytes per record (event-protocol.md)
 const MAX_EVENTS_PER_TICK = 1024;
@@ -125,8 +126,9 @@ export class Scheduler {
 
         const frame = clock.cycleToFrame(onsetCycle); // exact engine frame
         const durFrames = h.whole ? clock.cyclesToFrames(h.whole.end - h.whole.begin) : 0;
-        // Phase 0 value is { s: "bd" } → the kick (instrument 0), body default freq.
-        writeNoteOn(this.view, n, 1, frame, this.voiceCtr++, 55, 0.9, durFrames, 0, this.seq++);
+        // The hap value selects the instrument (preset name or id), pitch and velocity.
+        const { instrument, freq, vel } = resolveNote(h.value);
+        writeNoteOn(this.view, n, 1, frame, this.voiceCtr++, freq, vel, durFrames, instrument, this.seq++);
         n++;
       }
     }
