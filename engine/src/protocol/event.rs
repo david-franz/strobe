@@ -35,7 +35,7 @@ pub struct EventRecord {
     pub version: u8,    // 0
     pub opcode: u8,     // 1
     pub track: u16,     // 2..4   (p1=1…; 0 = master/global)
-    pub frame: u32,     // 4..8   engine-relative audio-frame timestamp
+    pub frame: u32,     // 4..8   engine-relative audio-frame timestamp (see note below)
     pub vp: u32,        // 8..12  voice id (NoteOn/Off) or param id (ParamSet)
     pub arg0: f32,      // 12..16
     pub arg1: f32,      // 16..20
@@ -46,6 +46,12 @@ pub struct EventRecord {
 
 const _: () = assert!(core::mem::size_of::<EventRecord>() == REC_SIZE);
 const _: () = assert!(core::mem::align_of::<EventRecord>() == 4);
+
+// NOTE: `frame` is u32, so the engine-relative timestamp wraps after 2^32 frames — about
+// 24.8 h of continuous playback at 48 kHz. The engine's own clock is u64 and does not wrap, so
+// past that horizon newly scheduled events read as "late" and fire at buffer starts rather than
+// sample-accurately. Acceptable for normal sessions/performances; widening `frame` to u64 (and
+// REC_SIZE past 32 bytes) is the fix if a long-running installation ever needs it.
 
 impl EventRecord {
     /// Build a `NoteOn` (0x01). `voice` is the handle TS will reuse for `NoteOff`.

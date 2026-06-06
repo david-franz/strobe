@@ -72,6 +72,7 @@ offset  size  field        notes
 - The scheduler computes it from cycle-time: `frame = round((eventTimeSeconds) * sampleRate)`, offset by the engine's frame at scheduling time.
 - The audio thread drains all events with `frame <= currentFrame + bufferLen`, applying each at its exact offset within the buffer.
 - An event that arrives with `frame < currentFrame` (i.e. late) is applied immediately and counted as a "late event" warning, never silently dropped musically.
+- **Wrap horizon.** `frame` is a `u32`, so it wraps after 2³² frames ≈ **24.8 h** of continuous playback at 48 kHz, while the engine's own clock is `u64` and does not wrap. Past that point newly scheduled events read as late and fire at buffer boundaries rather than sample-accurately. This is fine for sessions and performances; a long-running installation would need `frame` widened to `u64` (growing the record past 32 bytes).
 
 ### Voice ids
 
