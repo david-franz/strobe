@@ -10,3 +10,7 @@ dist
 
 # OS
 .DS_Store
+
+# napi-generated artifacts
+bindings/native/index.js
+bindings/native/index.d.ts

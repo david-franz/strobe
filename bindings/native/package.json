@@ -1,0 +1,22 @@
+{
+  "name": "@strobe/native",
+  "version": "0.0.0",
+  "description": "Native (napi-rs) backend for the strobe audio engine.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "strobe-native"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
+  }
+}
