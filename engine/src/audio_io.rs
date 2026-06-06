@@ -11,6 +11,7 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::dsp::effects::MasterBus;
+use crate::dsp::fx::{self, FxCtx, SendRouter, SidechainBus, TrackEffects, MAX_TRACKS};
 use crate::error::AudioError;
 use crate::protocol::ring::RingConsumer;
 use crate::scheduler;
@@ -63,14 +64,25 @@ pub fn open_output(
 }
 
 /// State the audio thread owns. Constructed before the stream; no allocation after.
+///
+/// The effects rack is **pre-allocated** here: per-track stereo buffers, a full insert chain
+/// per track, the shared send router, and the cross-track sidechain bus. Buffers/chains are
+/// indexed by track id (0 = master/global, 1.. = p1..). Nothing here allocates on the audio
+/// thread.
 pub struct AudioState {
     pub channels: usize,
     pub sample_rate: f32,
+    pub cps: f32,
     pub frame_clock: Arc<AtomicU64>,
     pub consumer: RingConsumer,
     pub pool: VoicePool,
     pub bus: MasterBus,
     pub stats: Arc<EngineStatsShared>,
+    track_l: Vec<Vec<f32>>,
+    track_r: Vec<Vec<f32>>,
+    chains: Vec<TrackEffects>,
+    sends: SendRouter,
+    sidechain: SidechainBus,
     mix_l: Vec<f32>,
     mix_r: Vec<f32>,
 }
@@ -86,14 +98,21 @@ impl AudioState {
         bus: MasterBus,
         stats: Arc<EngineStatsShared>,
     ) -> Self {
+        let n = MAX_TRACKS + 1; // index by track id; 0 = master/global, 1.. = p1..
         Self {
             channels,
             sample_rate,
+            cps: 0.5,
             frame_clock,
             consumer,
             pool,
             bus,
             stats,
+            track_l: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
+            track_r: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
+            chains: (0..n).map(|_| fx::build_track_chain(sample_rate)).collect(),
+            sends: fx::build_send_router(sample_rate),
+            sidechain: SidechainBus::new(sample_rate),
             mix_l: vec![0.0; MAX_BUFFER],
             mix_r: vec![0.0; MAX_BUFFER],
         }
@@ -124,40 +143,59 @@ pub fn build_stream(
 }
 
 /// The per-buffer render loop. THIS IS THE HOT PATH.
+///
+/// voices → per-track buffers → (sidechain tap) → per-track insert chains → send taps → master
+/// mix → send returns → master bus/limiter → interleave. No allocation, no locks.
 #[inline]
 pub fn render(st: &mut AudioState, data: &mut [f32]) {
     let ch = st.channels;
     debug_assert!(ch >= 1);
-    let frames = data.len() / ch;
-    debug_assert!(frames <= MAX_BUFFER);
-    let frames = frames.min(MAX_BUFFER);
+    let frames = (data.len() / ch).min(MAX_BUFFER);
     let base = st.frame_clock.load(Ordering::Relaxed);
 
-    // Zero the stereo mix for this buffer.
-    for i in 0..frames {
-        st.mix_l[i] = 0.0;
-        st.mix_r[i] = 0.0;
+    // Disjoint borrows of the rack fields for the rest of the loop.
+    let AudioState {
+        frame_clock, consumer, pool, bus, chains, sends, sidechain, stats, track_l, track_r,
+        mix_l, mix_r, sample_rate, cps, ..
+    } = st;
+
+    // Zero per-track buffers + the master mix for this block.
+    for t in 0..track_l.len() {
+        track_l[t][..frames].fill(0.0);
+        track_r[t][..frames].fill(0.0);
+    }
+    mix_l[..frames].fill(0.0);
+    mix_r[..frames].fill(0.0);
+
+    // Drain events (updating chains) + render voices into their per-track buffers.
+    scheduler::dispatch_and_render(consumer, base, frames as u64, pool, bus, chains, stats, track_l, track_r);
+
+    // Pass 1: tap every track's pre-FX level into the sidechain bus *before* any chain reads it,
+    // so a duck can follow any source track regardless of track order.
+    for t in 1..track_l.len() {
+        sidechain.tap(t, &track_l[t][..frames], &track_r[t][..frames]);
     }
 
-    // Drain events + render the pool in sample-accurate segments.
-    scheduler::dispatch_and_render(
-        &mut st.consumer,
-        base,
-        frames as u64,
-        &mut st.pool,
-        &mut st.bus,
-        &st.stats,
-        &mut st.mix_l[..frames],
-        &mut st.mix_r[..frames],
-    );
+    // Pass 2: run each track's insert chain, tap its sends, sum it into the master mix.
+    let ctx = FxCtx { sample_rate: *sample_rate, cps: *cps, sidechain: &*sidechain };
+    for t in 1..track_l.len() {
+        chains[t].process(&mut track_l[t][..frames], &mut track_r[t][..frames], &ctx);
+        sends.add_from_track(&track_l[t][..frames], &track_r[t][..frames], chains[t].send_levels());
+        for i in 0..frames {
+            mix_l[i] += track_l[t][i];
+            mix_r[i] += track_r[t][i];
+        }
+    }
+    // Process the shared send buses once and add their returns into the master mix.
+    sends.process_returns(&mut mix_l[..frames], &mut mix_r[..frames], &ctx);
 
     // Master bus + look-ahead limiter: the final stage before the device.
-    st.bus.process(&mut st.mix_l[..frames], &mut st.mix_r[..frames]);
+    bus.process(&mut mix_l[..frames], &mut mix_r[..frames]);
 
     // Interleave to the device: stereo on ch 0/1, mono = (L+R)/2, extra channels silent.
     for f in 0..frames {
-        let l = st.mix_l[f];
-        let r = st.mix_r[f];
+        let l = mix_l[f];
+        let r = mix_r[f];
         let off = f * ch;
         if ch == 1 {
             data[off] = (l + r) * 0.5;
@@ -170,7 +208,7 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
         }
     }
 
-    st.frame_clock.store(base + frames as u64, Ordering::Relaxed);
+    frame_clock.store(base + frames as u64, Ordering::Relaxed);
 }
 
 pub fn play(stream: &cpal::Stream) -> Result<(), AudioError> {
@@ -205,6 +243,58 @@ mod tests {
 
     fn kick_at(frame: u32) -> EventRecord {
         EventRecord::note_on(1, frame, 1, 0.0, 1.0, 0.0, 0.0, 1)
+    }
+
+    fn track_fx(track: u16, frame: u32, param: u32, value: f32) -> EventRecord {
+        EventRecord {
+            version: 1,
+            opcode: 0x30,
+            track,
+            frame,
+            vp: param,
+            arg0: value,
+            arg1: 0.0,
+            arg2: 0.0,
+            arg3: 0.0,
+            flags_seq: 0,
+        }
+    }
+
+    #[test]
+    fn track_filter_shapes_the_whole_track_through_render() {
+        use crate::dsp::fx::{filter_eq::PF_CUTOFF_LP, pack_fx, SLOT_FILTER};
+        use crate::graph::InstrumentConfig;
+
+        // A bright saw note on a track; with a low-cutoff track LP it should lose most energy.
+        let energy = |with_filter: bool| -> f32 {
+            let drops = Arc::new(AtomicU64::new(0));
+            let (producer, consumer) = ring(256, drops);
+            let pool = VoicePool::new(
+                &[(5, InstrumentDef::Synth(InstrumentConfig::default()), 0)],
+                48_000.0,
+                4,
+            );
+            let mut st = AudioState::new(
+                2,
+                48_000.0,
+                Arc::new(AtomicU64::new(0)),
+                consumer,
+                pool,
+                MasterBus::new(48_000.0),
+                Arc::new(EngineStatsShared::default()),
+            );
+            producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1));
+            if with_filter {
+                producer.try_push(track_fx(1, 0, pack_fx(SLOT_FILTER, PF_CUTOFF_LP), 150.0));
+            }
+            let mut buf = vec![0.0f32; 2048 * 2];
+            render(&mut st, &mut buf);
+            buf.iter().map(|x| x * x).sum::<f32>()
+        };
+        let open = energy(false);
+        let filtered = energy(true);
+        assert!(open > 0.0, "the dry note produced sound");
+        assert!(filtered < open * 0.6, "the track LP removed energy ({filtered} vs {open})");
     }
 
     #[test]

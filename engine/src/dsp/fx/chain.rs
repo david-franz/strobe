@@ -42,6 +42,16 @@ impl TrackEffects {
         }
     }
 
+    /// Install a pre-built effect into a slot **inactive** (mix 0) — it stays a dry passthrough
+    /// until a param activates it. Used to pre-allocate the whole rack at engine start so no
+    /// audio-thread allocation is ever needed.
+    pub fn install(&mut self, slot: usize, effect: Box<dyn Effect>) {
+        if slot < MAX_SLOTS {
+            self.slots[slot].effect = Some(effect);
+            self.slots[slot].mix.snap(0.0);
+        }
+    }
+
     /// Per-send levels, tapped by the SendRouter after the chain runs.
     pub fn send_levels(&mut self) -> &mut [Smoothed; MAX_SENDS] {
         &mut self.send
@@ -60,6 +70,11 @@ impl TrackEffects {
         let n = l.len().min(MAX_BLOCK);
         let Self { slots, dry_l, dry_r, .. } = self;
         for slot in slots.iter_mut() {
+            // Skip an inactive slot (mix fully 0): pure dry passthrough, so a pre-installed but
+            // unused effect costs nothing.
+            if slot.mix.cur() <= 1e-6 && slot.mix.target() <= 1e-6 {
+                continue;
+            }
             let Some(fx) = slot.effect.as_mut() else {
                 continue;
             };
@@ -91,12 +106,22 @@ impl TrackEffects {
         }
         match p {
             FX_MIX => self.slots[s].mix.set_target(value),
-            FX_BYPASS => self.slots[s].xfade.set_target(if value >= 0.5 { 1.0 } else { 0.0 }),
+            // value >= 0.5 bypasses the slot (xfade → 0 = dry); < 0.5 makes it active (→ 1 = wet).
+            FX_BYPASS => self.slots[s].xfade.set_target(if value >= 0.5 { 0.0 } else { 1.0 }),
             _ => {
+                self.activate(s);
                 if let Some(fx) = self.slots[s].effect.as_mut() {
                     fx.set_param(p, value);
                 }
             }
+        }
+    }
+
+    /// Using an effect activates its slot: fade the wet mix up from the inactive 0 (no-op if it
+    /// is already active or the user set an explicit mix).
+    fn activate(&mut self, s: usize) {
+        if self.slots[s].mix.target() <= 0.0 {
+            self.slots[s].mix.set_target(1.0);
         }
     }
 
@@ -117,6 +142,7 @@ impl TrackEffects {
         match p {
             FX_MIX => self.slots[s].mix.ramp_to(target, frames),
             _ => {
+                self.activate(s);
                 if let Some(fx) = self.slots[s].effect.as_mut() {
                     fx.ramp_param(p, target, frames);
                 }

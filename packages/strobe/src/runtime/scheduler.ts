@@ -8,7 +8,7 @@ import type { Engine } from "../backend/engine";
 import type { Clock } from "../clock/clock";
 import { activeTracks, promotePending } from "./tracks";
 import { queryArc, hasOnset, type Hap, type Pattern } from "../pattern/pattern";
-import { noteToFreq, PARAM_REGISTRY, PARAM_RAMP_KEYS, type ControlMap } from "../pattern/control";
+import { noteToFreq, packFx, PARAM_REGISTRY, PARAM_RAMP_KEYS, type ControlMap } from "../pattern/control";
 import { isContinuousPattern } from "../pattern/signals";
 import { PRESETS } from "../instruments/presets";
 
@@ -207,6 +207,7 @@ export class Scheduler {
       if (!route || route.kind === "noteField" || route.kind === "trigField") continue;
       if (typeof value === "string") continue; // e.g. sidechain target (Phase 3)
 
+      const id = route.kind === "trackFx" ? packFx(route.slot, route.param) : route.param;
       if (
         typeof value !== "number" &&
         isContinuousPattern(value) &&
@@ -214,11 +215,11 @@ export class Scheduler {
         hap.whole
       ) {
         const target = num(value, hap.whole.end);
-        out.push(paramRamp(track, onsetFrame, route.param, target, durFrames));
+        out.push(paramRamp(track, onsetFrame, id, target, durFrames));
       } else {
         const v = num(value, hap.part.begin);
-        if (route.kind === "paramSet") out.push(paramSet(track, onsetFrame, route.param, v));
-        else out.push(trackFx(track, onsetFrame, route.param, v));
+        if (route.kind === "paramSet") out.push(paramSet(track, onsetFrame, id, v));
+        else out.push(trackFx(track, onsetFrame, id, v));
       }
     }
   }

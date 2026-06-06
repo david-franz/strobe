@@ -116,6 +116,12 @@ pub enum Decoded {
         param: u32,
         value: f32,
     },
+    /// Set a track-effect parameter. `param` packs `(fx_slot, fx_param)` (see `dsp::fx`).
+    TrackFx {
+        track: u16,
+        param: u32,
+        value: f32,
+    },
     Tempo {
         cps: f32,
     },
@@ -141,6 +147,11 @@ pub fn decode(r: &EventRecord) -> Result<Decoded, ()> {
         },
         op::NOTE_OFF => Decoded::NoteOff { voice: r.vp },
         op::PARAM_SET => Decoded::ParamSet {
+            track: r.track,
+            param: r.vp,
+            value: r.arg0,
+        },
+        op::TRACK_FX => Decoded::TrackFx {
             track: r.track,
             param: r.vp,
             value: r.arg0,

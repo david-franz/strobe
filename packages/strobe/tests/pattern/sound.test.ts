@@ -58,8 +58,8 @@ describe("sound / note / freq", () => {
   it("PARAM_REGISTRY routes keys per the contract", () => {
     expect(PARAM_REGISTRY.note).toMatchObject({ kind: "noteField", field: "freq" });
     expect(PARAM_REGISTRY.gain).toMatchObject({ kind: "noteField", field: "vel" });
-    expect(PARAM_REGISTRY.lpf).toMatchObject({ kind: "paramSet" });
-    expect(PARAM_REGISTRY.resonance).toMatchObject({ kind: "paramSet" });
+    expect(PARAM_REGISTRY.lpf).toMatchObject({ kind: "trackFx", slot: 0 }); // track performance filter
+    expect(PARAM_REGISTRY.resonance).toMatchObject({ kind: "trackFx", slot: 0 });
     expect(PARAM_REGISTRY.room).toMatchObject({ kind: "trackFx" });
   });
 

@@ -6,6 +6,7 @@ import { Scheduler, writeNoteOn, writeTempo } from "../../src/runtime/scheduler"
 import { setTrack } from "../../src/runtime/tracks";
 import { sound, note } from "../../src/pattern/sound";
 import { sine } from "../../src/pattern/signals";
+import { packFx } from "../../src/pattern/control";
 
 function fakeEngine() {
   let currentFrame = 0;
@@ -222,16 +223,24 @@ describe("Hap → events compiler", () => {
     expect(on.arg0).toBeCloseTo(65.41, 1); // c2 freq
   });
 
-  it(".lpf(800) emits a ParamSet (0x10, Cutoff=0)", () => {
-    const ps = tickOnce(sound("saw").lpf(800).query).find((r) => r.op === 0x10)!;
-    expect(ps.vp).toBe(0);
-    expect(ps.arg0).toBeCloseTo(800, 3);
+  it(".lpf(800) emits a TrackFx setting the track filter cutoff", () => {
+    const fx = tickOnce(sound("saw").lpf(800).query).find((r) => r.op === 0x30)!;
+    expect(fx.vp).toBe(packFx(0, 0x02)); // filter slot 0, cutoff-LP param
+    expect(fx.arg0).toBeCloseTo(800, 3);
   });
 
-  it(".room(0.3) emits a TrackFx (0x30)", () => {
+  it(".room(0.3) emits a TrackFx send-level", () => {
     const fx = tickOnce(sound("saw").room(0.3).query).find((r) => r.op === 0x30)!;
-    expect(fx.vp).toBe(2);
+    expect(fx.vp).toBe(packFx(0xff, 0x10)); // CHAIN_SLOT, reverb send level
     expect(fx.arg0).toBeCloseTo(0.3, 6);
+  });
+
+  it(".hpf and .eqMid route to their own fx slots/params", () => {
+    const hp = tickOnce(sound("saw").hpf(2000).query).find((r) => r.op === 0x30)!;
+    expect(hp.vp).toBe(packFx(0, 0x04)); // filter slot, cutoff-HP (mode follows the param id)
+    const eq = tickOnce(sound("saw").eqMid(3).query).find((r) => r.op === 0x30)!;
+    expect(eq.vp).toBe(packFx(1, 0x15)); // EQ slot 1, mid-band gain
+    expect(eq.arg0).toBeCloseTo(3, 6);
   });
 
   it("a continuous lpf signal emits a ParamRamp (0x11)", () => {

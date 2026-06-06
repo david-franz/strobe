@@ -53,8 +53,12 @@ declare module "./pattern" {
     speed(v: Val): Pat<ControlMap>;
     lpf(v: Val): Pat<ControlMap>;
     hpf(v: Val): Pat<ControlMap>;
+    bpf(v: Val): Pat<ControlMap>;
     resonance(v: Val): Pat<ControlMap>;
     res(v: Val): Pat<ControlMap>;
+    eqLow(v: Val): Pat<ControlMap>;
+    eqMid(v: Val): Pat<ControlMap>;
+    eqHigh(v: Val): Pat<ControlMap>;
     room(v: Val): Pat<ControlMap>;
     note(v: number): Pat<ControlMap>;
     saw(): Pat<ControlMap>;
@@ -89,8 +93,12 @@ export function installSoundMethods(): void {
   proto.speed = merge("speed");
   proto.lpf = merge("lpf");
   proto.hpf = merge("hpf");
+  proto.bpf = merge("bpf");
   proto.resonance = merge("resonance");
   proto.res = merge("resonance");
+  proto.eqLow = merge("eqLow");
+  proto.eqMid = merge("eqMid");
+  proto.eqHigh = merge("eqHigh");
   proto.room = merge("room");
   proto.note = function (this: Pat<ControlMap>, v: number) {
     return this.fmap((cm) => ({ ...cm, note: v }));
