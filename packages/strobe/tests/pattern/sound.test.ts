@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { sound, note, freq, jux } from "./sound";
-import { parseNote, noteToFreq, PARAM_REGISTRY } from "./control";
-import { rev } from "./combinators";
-import { queryArc, sameTime, pure } from "./pattern";
-import type { ControlMap } from "./control";
+import { sound, note, freq, jux } from "../../src/pattern/sound";
+import { parseNote, noteToFreq, PARAM_REGISTRY } from "../../src/pattern/control";
+import { rev } from "../../src/pattern/combinators";
+import { queryArc, sameTime, pure } from "../../src/pattern/pattern";
+import type { ControlMap } from "../../src/pattern/control";
 
 const values = (haps: { value: ControlMap }[]) => haps.map((h) => h.value);
 

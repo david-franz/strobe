@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseMini, MiniError } from "./mini";
-import { queryArc, sameTime } from "./pattern";
+import { parseMini, MiniError } from "../../src/pattern/mini";
+import { queryArc, sameTime } from "../../src/pattern/pattern";
 
 const onsets = (src: string, begin: number, end: number) =>
   queryArc(parseMini(src), begin, end)

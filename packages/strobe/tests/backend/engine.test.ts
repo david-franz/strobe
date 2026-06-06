@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createNativeEngine, type Engine } from "./engine";
+import { createNativeEngine, type Engine } from "../../src/backend/engine";
 
 // Encode one 32-byte NoteOn record (mirror of event-protocol.md), little-endian.
 function noteOnBuffer(frame: number): ArrayBuffer {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadSongSafely } from "./runtime";
-import { p1, getTrack, clearAllTracks } from "./tracks";
-import { bdEvery } from "../pattern/builders";
+import { loadSongSafely } from "../../src/runtime/runtime";
+import { p1, getTrack, clearAllTracks } from "../../src/runtime/tracks";
+import { bdEvery } from "../../src/pattern/builders";
 
 beforeEach(() => clearAllTracks());
 

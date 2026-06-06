@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { bdEvery, bdEuclid } from "./builders";
-import { queryArc } from "./pattern";
+import { bdEvery, bdEuclid } from "../../src/pattern/builders";
+import { queryArc } from "../../src/pattern/pattern";
 
 describe("bdEvery", () => {
   it("queryArc(bdEvery(4), 0, 1) yields 4 quarter-cycle onsets", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { drum, drumKind, isDrumName } from "./drums";
+import { drum, drumKind, isDrumName } from "../../src/instruments/drums";
 
 describe("drum name mapping", () => {
   it("maps the kit tokens to kinds", () => {

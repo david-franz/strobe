@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { seq, every, euclid } from "./builders";
-import { queryArc } from "./pattern";
+import { seq, every, euclid } from "../../src/pattern/builders";
+import { queryArc } from "../../src/pattern/pattern";
 
 describe("pattern builders", () => {
   it("every(v, n) places n evenly-spaced hits", () => {

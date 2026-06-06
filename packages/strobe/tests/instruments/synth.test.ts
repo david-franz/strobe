@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { noteToHz, midiToHz, synth } from "./synth";
+import { noteToHz, midiToHz, synth } from "../../src/instruments/synth";
 
 describe("noteToHz", () => {
   it("resolves the README pitches (scientific pitch)", () => {

@@ -81,6 +81,7 @@ strobe/
       instruments/         # synth + drum builders, preset ids
       runtime/             # look-ahead scheduler, track slots, file-watch hot-reload
       index.ts             # public surface
+    tests/                 # vitest specs, mirroring src/ (not colocated)
   examples/                # runnable songs
   docs/                    # architecture & design docs
 ```

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { Engine } from "../backend/engine";
-import { Clock } from "./clock";
+import type { Engine } from "../../src/backend/engine";
+import { Clock } from "../../src/clock/clock";
 
 function fakeEngine() {
   let currentFrame = 0;

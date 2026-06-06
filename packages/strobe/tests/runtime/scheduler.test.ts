@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { Engine } from "../backend/engine";
-import type { Pattern } from "../pattern/pattern";
-import { Clock } from "../clock/clock";
-import { Scheduler, writeNoteOn, writeTempo } from "./scheduler";
-import { setTrack } from "./tracks";
-import { sound, note } from "../pattern/sound";
-import { sine } from "../pattern/signals";
+import type { Engine } from "../../src/backend/engine";
+import type { Pattern } from "../../src/pattern/pattern";
+import { Clock } from "../../src/clock/clock";
+import { Scheduler, writeNoteOn, writeTempo } from "../../src/runtime/scheduler";
+import { setTrack } from "../../src/runtime/tracks";
+import { sound, note } from "../../src/pattern/sound";
+import { sine } from "../../src/pattern/signals";
 
 function fakeEngine() {
   let currentFrame = 0;

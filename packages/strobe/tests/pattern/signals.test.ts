@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { sine, cosine, saw, isaw, tri, square, rand, perlin, isContinuousPattern } from "./signals";
-import { queryArc } from "./pattern";
+import { sine, cosine, saw, isaw, tri, square, rand, perlin, isContinuousPattern } from "../../src/pattern/signals";
+import { queryArc } from "../../src/pattern/pattern";
 
 const at = (p: Parameters<typeof queryArc>[0], t: number) => queryArc(p, t, t)[0].value as number;
 

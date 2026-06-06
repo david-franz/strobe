@@ -11,9 +11,9 @@ import {
   degrade,
   euclid,
   bjorklund,
-} from "./combinators";
-import { parseMini } from "./mini";
-import { pure, queryArc, sameTime } from "./pattern";
+} from "../../src/pattern/combinators";
+import { parseMini } from "../../src/pattern/mini";
+import { pure, queryArc, sameTime } from "../../src/pattern/pattern";
 
 const onsetValues = (haps: { whole?: { begin: number } | undefined; part: { begin: number }; value: unknown }[]) =>
   haps

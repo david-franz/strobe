@@ -12,12 +12,12 @@ import {
   endReload,
   abortReload,
   p1,
-} from "./tracks";
-import { setActiveClock } from "../clock/singleton";
-import { Clock } from "../clock/clock";
-import type { Engine } from "../backend/engine";
-import { sound } from "../pattern/sound";
-import { queryArc } from "../pattern/pattern";
+} from "../../src/runtime/tracks";
+import { setActiveClock } from "../../src/clock/singleton";
+import { Clock } from "../../src/clock/clock";
+import type { Engine } from "../../src/backend/engine";
+import { sound } from "../../src/pattern/sound";
+import { queryArc } from "../../src/pattern/pattern";
 
 function clockAt(frame: number): Clock {
   const engine: Engine = {

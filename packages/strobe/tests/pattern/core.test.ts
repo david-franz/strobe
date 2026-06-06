@@ -8,7 +8,7 @@ import {
   withTime,
   hasOnset,
   sameTime,
-} from "./pattern";
+} from "../../src/pattern/pattern";
 
 describe("pattern core", () => {
   it("pure plays one value per cycle", () => {
