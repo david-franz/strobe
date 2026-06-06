@@ -133,10 +133,9 @@ impl Engine {
 
     pub fn push_events(&self, bytes: &[u8]) -> Result<(), EngineError> {
         let recs = protocol::event::records_from_bytes(bytes).map_err(|_| EngineError::BadLength)?;
-        let dropped = self.producer.push_batch(recs);
-        if dropped > 0 {
-            self.full_drops.fetch_add(dropped as u64, Ordering::Relaxed);
-        }
+        // Full-ring drops are counted inside the ring (try_push → full_drops); the returned
+        // count is the same tally, so don't add it again here or every drop is double-counted.
+        self.producer.push_batch(recs);
         Ok(())
     }
 
