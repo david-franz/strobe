@@ -4,6 +4,8 @@ import type { Pattern } from "../pattern/pattern";
 import { Clock } from "../clock/clock";
 import { Scheduler, writeNoteOn, writeTempo } from "./scheduler";
 import { setTrack } from "./tracks";
+import { sound, note } from "../pattern/sound";
+import { sine } from "../pattern/signals";
 
 function fakeEngine() {
   let currentFrame = 0;
@@ -164,5 +166,80 @@ describe("look-ahead scheduling", () => {
     setFrame(48000);
     sched.tick();
     expect(pushed.length).toBe(0);
+  });
+});
+
+// ── The Hap → events compiler (Phase 2) ───────────────────────────────────────
+
+function records(pushed: ArrayBuffer[]) {
+  const recs: { op: number; track: number; vp: number; arg0: number; arg1: number; frame: number }[] = [];
+  for (const b of pushed) {
+    const v = new DataView(b);
+    for (let o = 0; o < b.byteLength; o += 32) {
+      recs.push({
+        op: v.getUint8(o + 1),
+        track: v.getUint16(o + 2, true),
+        vp: v.getUint32(o + 8, true),
+        arg0: v.getFloat32(o + 12, true),
+        arg1: v.getFloat32(o + 16, true),
+        frame: v.getUint32(o + 4, true),
+      });
+    }
+  }
+  return recs;
+}
+
+function tickOnce(pat: Pattern<unknown>) {
+  const { engine, pushed, setFrame } = fakeEngine();
+  const clock = new Clock(engine);
+  clock.cps = 1;
+  clock.anchor(48000);
+  setTrack(1, pat);
+  setFrame(0);
+  // A full-cycle lookahead so a single tick captures every onset in cycle 0.
+  new Scheduler(engine, clock, { lookaheadS: 1.0 }).tick();
+  return records(pushed);
+}
+
+describe("Hap → events compiler", () => {
+  it("sound('bd*4') → 4 one-shot NoteOns, no NoteOff/params", () => {
+    const recs = tickOnce(sound("bd*4").query);
+    expect(recs.filter((r) => r.op === 0x01).length).toBe(4);
+    expect(recs.every((r) => r.op === 0x01)).toBe(true);
+  });
+
+  it("sound('bd*4').gain(0.9) packs gain as velocity", () => {
+    const recs = tickOnce(sound("bd*4").gain(0.9).query);
+    expect(recs.filter((r) => r.op === 0x01).every((r) => Math.abs(r.arg1 - 0.9) < 1e-6)).toBe(true);
+  });
+
+  it("a gated synth note emits a NoteOn with a voice and a matching NoteOff", () => {
+    const recs = tickOnce(note("c2").saw().query);
+    const on = recs.find((r) => r.op === 0x01)!;
+    const off = recs.find((r) => r.op === 0x02)!;
+    expect(on.vp).toBeGreaterThan(0);
+    expect(off.vp).toBe(on.vp);
+    expect(on.arg0).toBeCloseTo(65.41, 1); // c2 freq
+  });
+
+  it(".lpf(800) emits a ParamSet (0x10, Cutoff=0)", () => {
+    const ps = tickOnce(sound("saw").lpf(800).query).find((r) => r.op === 0x10)!;
+    expect(ps.vp).toBe(0);
+    expect(ps.arg0).toBeCloseTo(800, 3);
+  });
+
+  it(".room(0.3) emits a TrackFx (0x30)", () => {
+    const fx = tickOnce(sound("saw").room(0.3).query).find((r) => r.op === 0x30)!;
+    expect(fx.vp).toBe(2);
+    expect(fx.arg0).toBeCloseTo(0.3, 6);
+  });
+
+  it("a continuous lpf signal emits a ParamRamp (0x11)", () => {
+    const ramp = tickOnce(note("c2").saw().lpf(sine.range(300, 1200).slow(8)).query).find(
+      (r) => r.op === 0x11,
+    );
+    expect(ramp).toBeTruthy();
+    expect(ramp!.arg0).toBeGreaterThanOrEqual(300);
+    expect(ramp!.arg0).toBeLessThanOrEqual(1200);
   });
 });

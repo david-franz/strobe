@@ -1,24 +1,28 @@
-// The TypeScript side of the "two clocks" technique (architecture.md). A coarse JS
-// timer wakes the scheduler every ~25 ms; on each wake it queries the active pattern
-// over [now, now+lookahead], converts each event's cycle-time to an exact engine
-// frame, encodes it into a fixed 32-byte record, and hands the batch to the engine in
-// one pushEvents call. Jitter here is invisible because the scheduler always works
-// ~100 ms into the future and the sample count decides the music.
+// The look-ahead scheduler ("two clocks"): each ~25 ms tick queries every active track's
+// pattern over [now, now+lookahead], turns each onset Hap<ControlMap> into engine records
+// (NoteOn/NoteOff + ParamSet/ParamRamp/TrackFx), frame-stamps and batch-encodes them into
+// the fixed 32-byte protocol, and pushes once. The Phase 0 skeleton is unchanged; only the
+// content generation is richer (the Hap→events compiler).
 
 import type { Engine } from "../backend/engine";
 import type { Clock } from "../clock/clock";
 import { activeTracks } from "./tracks";
-import { queryArc, type Hap } from "../pattern/pattern";
-import { resolveNote } from "../instruments/presets";
+import { queryArc, hasOnset, type Hap, type Pattern } from "../pattern/pattern";
+import { noteToFreq, PARAM_REGISTRY, PARAM_RAMP_KEYS, type ControlMap } from "../pattern/control";
+import { isContinuousPattern } from "../pattern/signals";
+import { PRESETS } from "../instruments/presets";
 
-const REC = 32; // bytes per record (event-protocol.md)
-const MAX_EVENTS_PER_TICK = 1024;
-
-const TICK_MS = 25; // coarse JS timer
-const LOOKAHEAD_S = 0.1; // 100 ms window (configurable)
+const REC = 32;
+const MAX_EVENTS_PER_TICK = 4096;
+const TICK_MS = 25;
+const LOOKAHEAD_S = 0.1;
 
 const VERSION = 1;
 const OP_NOTE_ON = 0x01;
+const OP_NOTE_OFF = 0x02;
+const OP_PARAM_SET = 0x10;
+const OP_PARAM_RAMP = 0x11;
+const OP_TRACK_FX = 0x30;
 const OP_TEMPO = 0x40;
 
 export interface SchedulerOpts {
@@ -26,8 +30,8 @@ export interface SchedulerOpts {
   lookaheadS?: number;
 }
 
-/** Encode a NoteOn into `view` at record index `i`, little-endian, no allocation.
- *  Exact mirror of the Rust `EventRecord` (event.rs / event-protocol.md). */
+// ── 32-byte record encoders (mirror event.rs / event-protocol.md) ─────────────
+
 export function writeNoteOn(
   view: DataView,
   i: number,
@@ -44,35 +48,112 @@ export function writeNoteOn(
   view.setUint8(o + 0, VERSION);
   view.setUint8(o + 1, OP_NOTE_ON);
   view.setUint16(o + 2, track, true);
-  view.setUint32(o + 4, frame >>> 0, true); // frame is engine-relative u32
+  view.setUint32(o + 4, frame >>> 0, true);
   view.setUint32(o + 8, voice >>> 0, true);
-  view.setFloat32(o + 12, freq, true); // arg0
-  view.setFloat32(o + 16, vel, true); // arg1
-  view.setFloat32(o + 20, durFrames, true); // arg2
-  view.setFloat32(o + 24, instrument, true); // arg3
-  view.setUint32(o + 28, seq >>> 0, true); // flags/seq
+  view.setFloat32(o + 12, freq, true);
+  view.setFloat32(o + 16, vel, true);
+  view.setFloat32(o + 20, durFrames, true);
+  view.setFloat32(o + 24, instrument, true);
+  view.setUint32(o + 28, seq >>> 0, true);
 }
 
-/** Encode a Tempo (global track) into `view` at record index `i`. */
-export function writeTempo(view: DataView, i: number, frame: number, cps: number, seq: number): void {
+function writeSimple(
+  view: DataView,
+  i: number,
+  opcode: number,
+  track: number,
+  frame: number,
+  vp: number,
+  arg0: number,
+  arg2: number,
+  seq: number,
+): void {
   const o = i * REC;
   view.setUint8(o + 0, VERSION);
-  view.setUint8(o + 1, OP_TEMPO);
-  view.setUint16(o + 2, 0, true); // track 0 = global
+  view.setUint8(o + 1, opcode);
+  view.setUint16(o + 2, track, true);
   view.setUint32(o + 4, frame >>> 0, true);
-  view.setUint32(o + 8, 0, true);
-  view.setFloat32(o + 12, cps, true); // arg0 = cps
+  view.setUint32(o + 8, vp >>> 0, true);
+  view.setFloat32(o + 12, arg0, true);
   view.setFloat32(o + 16, 0, true);
-  view.setFloat32(o + 20, 0, true);
+  view.setFloat32(o + 20, arg2, true);
   view.setFloat32(o + 24, 0, true);
   view.setUint32(o + 28, seq >>> 0, true);
+}
+
+export function writeTempo(view: DataView, i: number, frame: number, cps: number, seq: number): void {
+  writeSimple(view, i, OP_TEMPO, 0, frame, 0, cps, 0, seq);
+}
+
+/** One compiled record: its frame (for ordering) and an encoder. */
+interface RawEvent {
+  frame: number;
+  encode: (view: DataView, i: number, seq: number) => void;
+}
+
+const noteOn = (
+  track: number,
+  frame: number,
+  voice: number,
+  freq: number,
+  vel: number,
+  dur: number,
+  instrument: number,
+): RawEvent => ({
+  frame,
+  encode: (v, i, seq) => writeNoteOn(v, i, track, frame, voice, freq, vel, dur, instrument, seq),
+});
+const noteOff = (track: number, frame: number, voice: number): RawEvent => ({
+  frame,
+  encode: (v, i, seq) => writeSimple(v, i, OP_NOTE_OFF, track, frame, voice, 0, 0, seq),
+});
+const paramSet = (track: number, frame: number, param: number, value: number): RawEvent => ({
+  frame,
+  encode: (v, i, seq) => writeSimple(v, i, OP_PARAM_SET, track, frame, param, value, 0, seq),
+});
+const paramRamp = (
+  track: number,
+  frame: number,
+  param: number,
+  target: number,
+  rampFrames: number,
+): RawEvent => ({
+  frame,
+  encode: (v, i, seq) => writeSimple(v, i, OP_PARAM_RAMP, track, frame, param, target, rampFrames, seq),
+});
+const trackFx = (track: number, frame: number, param: number, value: number): RawEvent => ({
+  frame,
+  encode: (v, i, seq) => writeSimple(v, i, OP_TRACK_FX, track, frame, param, value, 0, seq),
+});
+
+// ── The Hap → events compiler ────────────────────────────────────────────────
+
+const HANDLED = new Set(["s", "note", "freq", "gain", "vel", "instrument"]);
+const DRUM_NAMES = new Set(["bd", "sn", "cp", "hh", "oh"]);
+
+/** Resolve a control value to a number, sampling a `Pat<number>` at the onset. */
+function num(value: unknown, t: number): number {
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    return (queryArc(value as Pattern<number>, t, t)[0]?.value as number) ?? 0;
+  }
+  return 0;
+}
+
+function resolveInstrument(cm: ControlMap): { id: number; drum: boolean } {
+  if (typeof cm.instrument === "number") {
+    return { id: cm.instrument, drum: cm.instrument <= 4 };
+  }
+  const name = typeof cm.s === "string" ? cm.s : "saw";
+  const id = (PRESETS as Record<string, number>)[name] ?? PRESETS.saw;
+  return { id, drum: DRUM_NAMES.has(name) || id <= 4 };
 }
 
 export class Scheduler {
   private buf = new ArrayBuffer(MAX_EVENTS_PER_TICK * REC);
   private view = new DataView(this.buf);
   private timer: ReturnType<typeof setInterval> | null = null;
-  private scheduledUntilCycle = 0; // frontier in cycle-time
+  private scheduledUntilCycle = 0;
   private seq = 0;
   private voiceCtr = 1;
   private readonly opts: Required<SchedulerOpts>;
@@ -82,18 +163,13 @@ export class Scheduler {
     private clock: Clock,
     opts: SchedulerOpts = {},
   ) {
-    this.opts = {
-      tickMs: opts.tickMs ?? TICK_MS,
-      lookaheadS: opts.lookaheadS ?? LOOKAHEAD_S,
-    };
+    this.opts = { tickMs: opts.tickMs ?? TICK_MS, lookaheadS: opts.lookaheadS ?? LOOKAHEAD_S };
   }
 
   start(): void {
-    // Initialize the frontier from the current cycle so we don't backfill the past.
     this.scheduledUntilCycle = this.clock.nowCycle();
     this.timer = setInterval(() => this.tick(), this.opts.tickMs);
   }
-
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
@@ -101,43 +177,78 @@ export class Scheduler {
     }
   }
 
-  /** One scheduler wake: query the new slice of cycle-time, encode, push once.
-   *  Public so it can be driven deterministically in tests. */
+  private allocVoice(): number {
+    this.voiceCtr = (this.voiceCtr % 0xffffffff) + 1;
+    return this.voiceCtr;
+  }
+
+  private compileHap(track: number, hap: Hap<ControlMap>, out: RawEvent[]): void {
+    const cm = hap.value;
+    const onsetFrame = this.clock.cycleToFrame(hap.part.begin);
+    const durFrames = hap.whole ? this.clock.cyclesToFrames(hap.whole.end - hap.whole.begin) : 0;
+
+    const { id: instrument, drum } = resolveInstrument(cm);
+    const velSrc = cm.gain ?? (cm as Record<string, unknown>).vel ?? 0.9;
+    const vel = num(velSrc, hap.part.begin);
+    const freq =
+      cm.freq != null ? num(cm.freq, hap.part.begin) : cm.note != null ? noteToFreq(cm.note) : 0;
+
+    if (drum) {
+      out.push(noteOn(track, onsetFrame, 0, freq, vel, durFrames, instrument)); // one-shot
+    } else {
+      const voice = this.allocVoice();
+      out.push(noteOn(track, onsetFrame, voice, freq, vel, 0, instrument)); // held
+      if (hap.whole) out.push(noteOff(track, this.clock.cycleToFrame(hap.whole.end), voice));
+    }
+
+    for (const [key, value] of Object.entries(cm)) {
+      if (HANDLED.has(key) || value == null) continue;
+      const route = PARAM_REGISTRY[key];
+      if (!route || route.kind === "noteField" || route.kind === "trigField") continue;
+      if (typeof value === "string") continue; // e.g. sidechain target (Phase 3)
+
+      if (
+        typeof value !== "number" &&
+        isContinuousPattern(value) &&
+        PARAM_RAMP_KEYS.has(key) &&
+        hap.whole
+      ) {
+        const target = num(value, hap.whole.end);
+        out.push(paramRamp(track, onsetFrame, route.param, target, durFrames));
+      } else {
+        const v = num(value, hap.part.begin);
+        if (route.kind === "paramSet") out.push(paramSet(track, onsetFrame, route.param, v));
+        else out.push(trackFx(track, onsetFrame, route.param, v));
+      }
+    }
+  }
+
+  /** One scheduler wake — public so it can be driven deterministically in tests. */
   tick(): void {
     const clock = this.clock;
     const nowCycle = clock.nowCycle();
-    const lookaheadCycles = this.opts.lookaheadS * clock.cps; // seconds → cycles
-    const windowEnd = nowCycle + lookaheadCycles;
-
-    // Overlapping windows: only schedule the *new* slice [scheduledUntilCycle, windowEnd).
-    const begin = Math.max(this.scheduledUntilCycle, nowCycle); // never backfill the past
+    const windowEnd = nowCycle + this.opts.lookaheadS * clock.cps;
+    const begin = Math.max(this.scheduledUntilCycle, nowCycle);
     if (windowEnd <= begin) return;
 
-    let n = 0;
-    // Query every active track; the track id is stamped into each event.
+    const events: RawEvent[] = [];
     for (const { id, pattern } of activeTracks()) {
-      const haps: Hap<unknown>[] = queryArc(pattern, begin, windowEnd);
+      const haps = queryArc(pattern as Pattern<ControlMap>, begin, windowEnd);
       for (const h of haps) {
-        if (n >= MAX_EVENTS_PER_TICK) break;
-        // The event fires at the onset of its whole; skip haps whose onset isn't in
-        // this slice (e.g. a hap clipped at the window edge).
-        const onsetCycle = h.whole ? h.whole.begin : h.part.begin;
-        if (onsetCycle < begin || onsetCycle >= windowEnd) continue;
-
-        const frame = clock.cycleToFrame(onsetCycle); // exact engine frame
-        const durFrames = h.whole ? clock.cyclesToFrames(h.whole.end - h.whole.begin) : 0;
-        // The hap value selects the instrument (preset name or id), pitch and velocity.
-        const { instrument, freq, vel } = resolveNote(h.value);
-        writeNoteOn(this.view, n, id, frame, this.voiceCtr++, freq, vel, durFrames, instrument, this.seq++);
-        n++;
+        if (!hasOnset(h)) continue;
+        const onset = h.whole!.begin;
+        if (onset < begin || onset >= windowEnd) continue;
+        this.compileHap(id, h, events);
       }
     }
-
     this.scheduledUntilCycle = windowEnd;
+    if (events.length) this.encodeAndPush(events);
+  }
 
-    if (n > 0) {
-      // One pushEvents per tick: a copy of exactly the bytes we wrote.
-      this.engine.pushEvents(this.buf.slice(0, n * REC));
-    }
+  private encodeAndPush(events: RawEvent[]): void {
+    events.sort((a, b) => a.frame - b.frame);
+    const n = Math.min(events.length, MAX_EVENTS_PER_TICK);
+    for (let i = 0; i < n; i++) events[i].encode(this.view, i, this.seq++);
+    this.engine.pushEvents(this.buf.slice(0, n * REC));
   }
 }
