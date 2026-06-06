@@ -53,6 +53,7 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 
 | Doc | What's in it |
 | --- | --- |
+| [docs/guide.md](docs/guide.md) | **User guide** — everything you can write today: mini-notation, sound/note, modifiers, combinators, signals, tracks |
 | [docs/architecture.md](docs/architecture.md) | The control/audio plane split, the bridge, the look-ahead scheduler, why none of it glitches |
 | [docs/pattern-model.md](docs/pattern-model.md) | `Pattern` / `Hap` / `TimeSpan`, mini-notation, the combinator vocabulary |
 | [docs/event-protocol.md](docs/event-protocol.md) | The binary event format TS sends to the Rust engine |
