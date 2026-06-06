@@ -10,6 +10,7 @@ pub mod envelope;
 pub mod error;
 pub mod event;
 pub mod filter;
+pub mod graph;
 pub mod ring;
 pub mod scheduler;
 pub mod stats;
