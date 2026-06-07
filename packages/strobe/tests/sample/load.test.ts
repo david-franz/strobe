@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { loadFile, loadPcm, sample, setActiveSampleEngine } from "../../src/sample/load";
 import { queryArc } from "../../src/pattern/pattern";
 import type { Engine } from "../../src/backend/engine";
+import "../../src/sample/edit"; // installs .pitch()/.stretch()
 
 function fakeEngine() {
   let fileCalls = 0;
   let pcmCalls = 0;
+  let stretchCalls = 0;
   let nextId = 0;
   const engine: Engine = {
     start: async () => {},
@@ -21,8 +23,12 @@ function fakeEngine() {
       pcmCalls++;
       return { id: nextId++, channels, frames: 500, sampleRate };
     },
+    prepareStretched: (_id, stretch) => {
+      stretchCalls++;
+      return { id: nextId++, channels: 2, frames: Math.round(1000 * stretch), sampleRate: 48000 };
+    },
   };
-  return { engine, calls: () => ({ fileCalls, pcmCalls }) };
+  return { engine, calls: () => ({ fileCalls, pcmCalls, stretchCalls }) };
 }
 
 describe("sample load", () => {
@@ -74,5 +80,32 @@ describe("sample load", () => {
     expect(haps.length).toBe(1);
     expect(haps[0].value.sampleId).toBe(0);
     expect(haps[0].value._frames).toBe(1000);
+  });
+
+  it(".stretch prepares a variant and remaps sampleId + frame count", () => {
+    const { engine } = fakeEngine();
+    setActiveSampleEngine(engine);
+    const v = sample("/x/amen.wav").stretch(2);
+    const cm = queryArc(v, 0, 1)[0].value;
+    expect(cm.sampleId).not.toBe(0); // remapped to the prepared variant id
+    expect(cm._frames).toBe(2000); // 1000 frames * stretch 2
+  });
+
+  it(".pitch keeps the frame count (constant duration) but remaps the id", () => {
+    const { engine } = fakeEngine();
+    setActiveSampleEngine(engine);
+    const v = sample("/x/amen.wav").pitch(12);
+    const cm = queryArc(v, 0, 1)[0].value;
+    expect(cm.sampleId).not.toBe(0);
+    expect(cm._frames).toBe(1000); // stretch factor 1 → unchanged length
+  });
+
+  it("a stretch edit prepares once per distinct id (cached across reloads)", () => {
+    const f = fakeEngine();
+    setActiveSampleEngine(f.engine);
+    const before = f.calls().stretchCalls;
+    sample("/x/amen.wav").stretch(2);
+    sample("/x/amen.wav").stretch(2); // same (id, factor) → cache hit
+    expect(f.calls().stretchCalls - before).toBe(1);
   });
 });

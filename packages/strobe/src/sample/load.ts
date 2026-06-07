@@ -70,6 +70,19 @@ export function loadPcm(
   return h;
 }
 
+/** Prepare a decoupled time-stretched / pitch-shifted variant of a loaded sample (offline, in
+ *  the engine). Returns a handle to the new buffer. Used by `.stretch()` / `.pitch()`.
+ *  Idempotent per (id, stretch, pitch) so a hot reload reuses the variant rather than piling
+ *  up buffers in the bank (v1 has no eviction). */
+export function prepareVariant(id: number, stretch: number, pitchSemitones: number): SampleHandle {
+  const key = `variant:${id}:${stretch}:${pitchSemitones}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const h = handle(requireEngine().prepareStretched(id, stretch, pitchSemitones));
+  cache.set(key, h);
+  return h;
+}
+
 /** Test/introspection: how many distinct sources are cached this session. */
 export function loadedCount(): number {
   return cache.size;

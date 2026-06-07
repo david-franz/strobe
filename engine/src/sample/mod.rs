@@ -4,6 +4,8 @@
 
 pub mod bank;
 pub mod decode;
+pub mod stretch;
 
 pub use bank::{SampleBank, SampleBuffer};
 pub use decode::{decode_bytes, prepare, DecodeError, DecodedPcm};
+pub use stretch::{StretchEngine, Wsola};

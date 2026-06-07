@@ -75,6 +75,17 @@ impl Engine {
         Ok(self.loaded(id))
     }
 
+    /// Prepare a time-stretched / pitch-shifted copy of a loaded sample (offline). Returns the
+    /// new sample id + metadata.
+    #[napi]
+    pub fn prepare_stretched(&self, id: u32, stretch: f64, pitch_semitones: f64) -> Result<LoadedSample> {
+        let new_id = self
+            .inner
+            .prepare_stretched(id, stretch, pitch_semitones)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(self.loaded(new_id))
+    }
+
     fn loaded(&self, id: u32) -> LoadedSample {
         let (channels, frames, sample_rate) = self.inner.sample_info(id).unwrap_or((0, 0, 0));
         LoadedSample {

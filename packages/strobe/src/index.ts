@@ -53,3 +53,4 @@ export { drum } from "./instruments/drums";
 
 // ── Phase 4 sampling ──
 export { sample, loadFile, loadPcm, type SampleHandle } from "./sample/load";
+import "./sample/edit"; // installs .pitch()/.stretch() on Pat.prototype

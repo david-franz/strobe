@@ -27,6 +27,8 @@ export interface Engine {
   loadSampleFile(path: string): LoadedSample;
   /** Non-real-time: load already-decoded interleaved PCM; returns the sample id + metadata. */
   loadSamplePcm(pcm: Float32Array, channels: number, sampleRate: number): LoadedSample;
+  /** Non-real-time: prepare a time-stretched / pitch-shifted copy of a sample; returns a new id. */
+  prepareStretched(id: number, stretch: number, pitchSemitones: number): LoadedSample;
 }
 
 /** Native backend: a thin wrapper over the napi addon. */
@@ -47,5 +49,6 @@ export function createNativeEngine(): Engine {
     stats: () => e.stats(),
     loadSampleFile: (path) => e.loadSampleFile(path),
     loadSamplePcm: (pcm, channels, sampleRate) => e.loadSamplePcm(pcm, channels, sampleRate),
+    prepareStretched: (id, stretch, pitch) => e.prepareStretched(id, stretch, pitch),
   };
 }

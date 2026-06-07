@@ -29,7 +29,7 @@ use dsp::filter::{SvfConfig, SvfMode};
 use error::AudioError;
 use graph::InstrumentConfig;
 use protocol::ring::{ring, RingConsumer, RingProducer};
-use sample::{decode, DecodedPcm, SampleBank};
+use sample::{decode, DecodedPcm, SampleBank, SampleBuffer, StretchEngine, Wsola};
 use stats::{EngineStats, EngineStatsShared};
 use voice_alloc::{InstrumentDef, VoicePool, SLOTS_PER_INSTRUMENT};
 use voices::drum::DrumConfig;
@@ -133,6 +133,21 @@ impl Engine {
     /// `(channels, frames, sample_rate)` for a loaded sample, or `None` if the id is unknown.
     pub fn sample_info(&self, id: u32) -> Option<(u16, usize, u32)> {
         self.sample_bank.lookup(id).map(|b| (b.channels, b.frames, b.sample_rate))
+    }
+
+    /// Prepare a decoupled time-stretched / pitch-shifted copy of a loaded sample (offline,
+    /// NON-REAL-TIME). `stretch` scales duration; `pitch_semitones` shifts pitch. Returns a new id.
+    pub fn prepare_stretched(
+        &self,
+        id: u32,
+        stretch: f64,
+        pitch_semitones: f64,
+    ) -> Result<u32, EngineError> {
+        let buf =
+            self.sample_bank.lookup(id).ok_or_else(|| EngineError::Sample(format!("unknown sample id {id}")))?;
+        let planes: Vec<Vec<f32>> = (0..buf.channels as usize).map(|c| buf.channel(c).to_vec()).collect();
+        let out = Wsola.process(&planes, stretch, pitch_semitones);
+        Ok(self.sample_bank.insert(Arc::new(SampleBuffer::from_planar(out, buf.sample_rate))))
     }
 
     /// Register an extra instrument (before `start`); returns its id. Dynamic definition

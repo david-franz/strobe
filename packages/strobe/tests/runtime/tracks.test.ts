@@ -27,6 +27,7 @@ function clockAt(frame: number): Clock {
     stats: () => ({ currentFrame: frame, underruns: 0, lateEvents: 0, ringFullness: 0 }),
     loadSampleFile: () => ({ id: 0, channels: 0, frames: 0, sampleRate: 0 }),
     loadSamplePcm: () => ({ id: 0, channels: 0, frames: 0, sampleRate: 0 }),
+    prepareStretched: () => ({ id: 0, channels: 0, frames: 0, sampleRate: 0 }),
   };
   const clock = new Clock(engine);
   clock.cps = 1;
