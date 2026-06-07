@@ -94,11 +94,12 @@ Early development. Building from a working spine outward:
 - ✅ **Phase 0 — proof of spine**: Rust engine makes sound; TS hot-swaps a kick loop at the cycle boundary with zero dropout. Lock-free SPSC event ring, look-ahead scheduler, napi bridge. → [`examples/phase0-kick.ts`](examples/phase0-kick.ts) (`pnpm demo`)
 - ✅ **Phase 1 — synthesis core**: a real instrument layer — band-limited oscillators (sine/saw/square/tri/noise/wavetable), a resonant state-variable filter (LP/HP/BP/notch), amp + filter ADSR envelopes, a configurable subtractive **synth voice**, a synthesized **drum kit** (bd/sn/cp/hh/oh with hat choke), **polyphony** with oldest/quietest voice-stealing (16+ voices), and a transparent master **look-ahead limiter**. → [`examples/phase1-kit.ts`](examples/phase1-kit.ts) (`pnpm demo:phase1`)
 - ✅ **Phase 2 — pattern language**: the declarative language above is now real — `Pat<T>` (a pure function of time), the **mini-notation** parser (`"bd(3,8)"`, `~`, `*` `/`, `[]`, `<>`, `,`, `!`, `?`), the full **combinator** vocabulary (`fast`/`rev`/`every`/`iter`/`jux`/`off`/`degrade`/…, as functions and chainable methods), the **`sound()`/`note()`/`freq()`** API with chained modifiers, **continuous signals** (`sine`/`saw`/`rand`/… `.range().slow()`), the scheduler that compiles each `Hap<ControlMap>` into the 32-byte protocol, and **named tracks** with seamless cycle-boundary hot-swap + mute/solo/hush. → [`examples/phase2-song.ts`](examples/phase2-song.ts) (`pnpm demo:phase2`)
-- ⬜ Phases 3–6: effects rack → sampling → live-coding DX → web backend.
+- ✅ **Phase 3 — effects rack**: per-track **effect chains** + global **send buses**, all pre-allocated and driven by smoothed params (no audio-thread allocation). A sweepable **performance filter** + 3-band **EQ**, **delay** & algorithmic **reverb** sends, **distortion** & **bitcrush**, **chorus/flanger/phaser**, a **compressor**, and the headline techno **sidechain pump** — plus audio-rate **parameter automation** so a signal can smoothly sweep any effect param. → [`examples/phase3-techno.ts`](examples/phase3-techno.ts) (`pnpm demo:phase3`)
+- ⬜ Phases 4–6: sampling → live-coding DX → web backend.
 
-> The README quickstart above now runs as written (`pnpm demo:phase2`). `room`/`sidechain` and audio-rate filter ramps are parsed and compiled today but become audible with the **Phase 3** effects rack.
+> The README quickstart above now runs **fully** as written (`pnpm demo:phase3`): the filter sweep, `.room`/`.delay` sends, and the `.sidechain("p1")` pump are all audible.
 
-Engine: 79 Rust tests; library: 98 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+Engine: 112 Rust tests; library: 104 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 

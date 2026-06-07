@@ -1,6 +1,6 @@
 # strobe — user guide
 
-A practical, conceptual reference to everything you can write today (Phases 0–2). For the
+A practical, conceptual reference to everything you can write today (Phases 0–3). For the
 design *behind* it, see [architecture.md](architecture.md) and [pattern-model.md](pattern-model.md).
 
 A song is just TypeScript that assigns patterns to tracks. Run one with hot-reload:
@@ -136,14 +136,13 @@ mutates). Values may be plain numbers, mini-notation strings, full patterns, or 
 | --- | --- | --- |
 | `.gain(x)` | level → note velocity | `0..1` (clamped) |
 | `.pan(x)` | stereo position | `0` left … `1` right (`0.5` center) |
-| `.lpf(hz)` / `.hpf(hz)` | filter cutoff (low/high-pass) | drives the voice's state-variable filter |
-| `.resonance(q)` (alias `.res`) | filter resonance / Q | `~0.5..20`; high Q = whistly peak at cutoff |
 | `.adsr(a,d,s,r)` | amp envelope | attack/decay/release in **seconds**, sustain `0..1` |
 | `.saw()/.square()/.sine()/.tri()` | synth waveform | shortcut that sets the `s` key |
 | `.note(n)` | (re)tune — e.g. pitch a kick | semitone or note name |
 | `.speed(x)` | sample playback speed/pitch | sampler — *Phase 4* |
-| `.room(x)` | reverb send amount | *accepted now, audible in Phase 3* |
-| `.sidechain("p1")` | duck this track against another | *accepted now, audible in Phase 3* |
+
+The **filter, EQ, and the rest of the effects** (`.lpf`, `.room`, `.sidechain`, …) are track-level
+and have their own section below.
 
 ```ts
 note("c2 c2 eb2 g2").saw().lpf(800).resonance(0.4).adsr(0.01,0.1,0.6,0.2).gain(0.85).pan(0.4)
@@ -274,6 +273,84 @@ them at a parameter's useful span (a filter likes hundreds-to-thousands of Hz, n
 
 ---
 
+## Effects (the rack)
+
+Each track has its own **effect chain** — a fixed set of inserts processed in a sensible order —
+plus two **shared send buses** (a reverb and a delay) that every track can feed. You don't build
+the rack; it's always there. An effect simply **wakes up when you first use it** and sleeps (costs
+nothing) when you don't. Every parameter is **smoothed**, so setting or sweeping one glides rather
+than clicking, and any of them can be **automated by a signal** (see below).
+
+### Filter & EQ — shape the whole track
+
+| Method | Effect |
+| --- | --- |
+| `.lpf(hz)` / `.hpf(hz)` / `.bpf(hz)` | the **performance filter** — low/high/band-pass on the whole track |
+| `.resonance(q)` (alias `.res`) | filter resonance / Q (`~0.5..20`; high Q = whistle/acid) |
+| `.eqLow(db)` / `.eqMid(db)` / `.eqHigh(db)` | 3-band EQ shelf/peak gains in dB (`0` = flat) |
+
+This filter sits on the *summed* track (distinct from each synth voice's own filter), so it's the
+one you *play*: `p3(note("c2*8").saw().lpf(sine.range(300,1400).slow(8)))` sweeps the **whole**
+bassline over 8 cycles. Pair a low cutoff with high `.resonance` for the classic acid squelch.
+
+### Character — grit & lo-fi
+
+| Method | Effect |
+| --- | --- |
+| `.dist(drive)` | saturation / overdrive (tanh by default — smooth at low drive, gnarly high) |
+| `.crush(bits)` | bit-depth reduction (`1`=fuzzy … `16`=clean) — grimy digital fuzz |
+| `.downsample(factor)` | sample-rate decimation (lo-fi aliasing; `1` = off) |
+
+The staples of techno/hip-hop drums: `p1(sound("bd sn").crush(8).dist(3))`.
+
+### Modulation — movement & width
+
+| Method | Effect |
+| --- | --- |
+| `.chorus(depth)` | LFO-modulated short delays + dry → ensemble width/shimmer |
+| `.flanger(depth)` | a single short modulated delay **with feedback** → the comb-filter "whoosh" |
+| `.phaser(depth)` | swept all-pass notches → swirling sweep, no pitch wobble |
+
+`depth` is `0..1` (default ~0.5–0.6). Reach for chorus to thicken keys/pads, phaser for slow
+evolving sweeps on a saw line.
+
+### Dynamics & the pump
+
+| Method | Effect |
+| --- | --- |
+| `.comp(ratio)` | a compressor (default threshold/attack/release) — glue and punch |
+| `.sidechain("p1")` | **the techno pump** — duck this track whenever track `p1` (the kick) hits |
+
+`.sidechain("p1")` is the headline move: the bass/pads dip on every kick and breathe back, the
+genre's signature rhythmic motion. Put it on the bass and feed it the kick track:
+`p3(note("c2*8").saw().sidechain("p1"))`.
+
+### Sends — shared space
+
+| Method | Effect |
+| --- | --- |
+| `.room(amount)` | feed this track into the shared **reverb** (`amount` = how much) |
+| `.delay(amount)` | feed this track into the shared **ping-pong delay** |
+
+Sends are shared, so many tracks bloom into *one* reverb tail (cheap and cohesive) rather than a
+separate reverb each. `.room(0.3)` is a tasteful wash; push it for a cavern.
+
+### Automating an effect (signals)
+
+Any effect parameter takes a **signal**, and a continuous signal on a filter/effect param is sent
+as a smooth **audio-rate ramp** so it glides between notes, not just at onsets:
+
+```ts
+p3( note("c2*8").saw().lpf( sine.range(300,1200).slow(8) ).sidechain("p1") ); // swept + pumping
+p2( sound("hh*8").crush( saw.range(12,4).slow(4) ) );                         // grit increasing
+```
+
+> **Order & scope.** The chain runs in a fixed order (filter → EQ → distortion → bitcrush →
+> modulation → compressor → sidechain), not the order you write the methods — a sensible default,
+> not authoring order. Removing an effect from a live pattern doesn't switch it off this version;
+> use `hush()` or keep it in the pattern. Per-effect fine controls (delay time, reverb size, LFO
+> rate) use built-in defaults for now.
+
 ## Tracks & live control
 
 | Function | Effect |
@@ -323,6 +400,6 @@ p3( note("c2*8").saw().resonance(0.6).lpf(rand.range(200, 1500).slow(2)) );
 p4( note("c3,eb3,g3").saw().adsr(0.005, 0.08, 0, 0.1).off(0.125, x => x.gain(0.5)) );
 ```
 
-> **Not audible yet:** `room`, `sidechain`, and audio-rate filter ramps are parsed and
-> compiled today but realised by the **Phase 3** effects rack. `speed`/sampling is **Phase 4**.
-> See [roadmap.md](roadmap.md) for what each phase adds.
+> **Not audible yet:** `.speed()` and sampling are **Phase 4**. Everything else here — including
+> the full effects rack (`.lpf` sweeps, `.room`/`.delay` sends, the `.sidechain` pump) — plays
+> today. See [roadmap.md](roadmap.md) for what each phase adds.

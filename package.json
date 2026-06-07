@@ -13,7 +13,8 @@
     "test": "vitest run",
     "demo": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase0-kick.ts'))\"",
     "demo:phase1": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase1-kit.ts'))\"",
-    "demo:phase2": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase2-song.ts'))\""
+    "demo:phase2": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase2-song.ts'))\"",
+    "demo:phase3": "tsx -e \"import('strobe/runtime').then(m => m.play('examples/phase3-techno.ts'))\""
   },
   "dependencies": {
     "strobe": "workspace:*"
