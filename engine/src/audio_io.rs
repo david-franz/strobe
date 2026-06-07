@@ -298,6 +298,46 @@ mod tests {
     }
 
     #[test]
+    fn param_ramp_sweeps_the_track_filter_through_render() {
+        use crate::dsp::fx::{filter_eq::PF_CUTOFF_LP, pack_fx, SLOT_FILTER};
+        use crate::graph::InstrumentConfig;
+
+        let drops = Arc::new(AtomicU64::new(0));
+        let (producer, consumer) = ring(256, drops);
+        let pool =
+            VoicePool::new(&[(5, InstrumentDef::Synth(InstrumentConfig::default()), 0)], 48_000.0, 4);
+        let mut st = AudioState::new(
+            2,
+            48_000.0,
+            Arc::new(AtomicU64::new(0)),
+            consumer,
+            pool,
+            MasterBus::new(48_000.0),
+            Arc::new(EngineStatsShared::default()),
+        );
+        producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1)); // bright saw, held
+        // ParamRamp the track LP cutoff from its 1 kHz default down to 150 Hz over 4000 frames.
+        producer.try_push(EventRecord {
+            version: 1,
+            opcode: 0x11,
+            track: 1,
+            frame: 0,
+            vp: pack_fx(SLOT_FILTER, PF_CUTOFF_LP),
+            arg0: 150.0,
+            arg1: 0.0,
+            arg2: 4000.0,
+            arg3: 0.0,
+            flags_seq: 0,
+        });
+        let mut buf = vec![0.0f32; 4096 * 2];
+        render(&mut st, &mut buf);
+        let energy = |r: std::ops::Range<usize>| buf[r].iter().map(|x| x * x).sum::<f32>();
+        let early = energy(1024 * 2..2048 * 2); // cutoff still high → bright
+        let late = energy(3072 * 2..4096 * 2); // cutoff near 150 Hz → dark
+        assert!(late < early * 0.7, "the filter closes as the cutoff ramps down ({late} vs {early})");
+    }
+
+    #[test]
     fn reverb_send_adds_a_tail_through_render() {
         use crate::dsp::fx::{pack_fx, CHAIN_SEND_BASE, CHAIN_SLOT, SEND_REVERB};
 

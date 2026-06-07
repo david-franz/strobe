@@ -40,6 +40,12 @@ fn apply(
                 chain.set_param(param, value); // param packs (fx_slot, fx_param)
             }
         }
+        Decoded::ParamRamp { track, param, target, ramp_frames } => {
+            // Smooth automation of an effect param (e.g. .lpf(sine…)) — glides on the audio thread.
+            if let Some(chain) = chains.get_mut(track as usize) {
+                chain.ramp_param(param, target, ramp_frames);
+            }
+        }
         Decoded::Tempo { .. } | Decoded::Nop => {}
         Decoded::Unknown(_) => {
             stats.unknown_op.fetch_add(1, Relaxed);

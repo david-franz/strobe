@@ -221,7 +221,8 @@ export class Scheduler {
         typeof value !== "number" &&
         isContinuousPattern(value) &&
         PARAM_RAMP_KEYS.has(key) &&
-        hap.whole
+        hap.whole &&
+        route.kind === "trackFx" // only effect params ramp on the audio thread; per-voice params sample per onset
       ) {
         const target = num(value, hap.whole.end);
         out.push(paramRamp(track, onsetFrame, id, target, durFrames));

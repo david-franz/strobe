@@ -122,6 +122,14 @@ pub enum Decoded {
         param: u32,
         value: f32,
     },
+    /// Linearly ramp a (track-effect) parameter to `target` over `ramp_frames`. `param` packs
+    /// `(fx_slot, fx_param)`.
+    ParamRamp {
+        track: u16,
+        param: u32,
+        target: f32,
+        ramp_frames: u32,
+    },
     Tempo {
         cps: f32,
     },
@@ -155,6 +163,12 @@ pub fn decode(r: &EventRecord) -> Result<Decoded, ()> {
             track: r.track,
             param: r.vp,
             value: r.arg0,
+        },
+        op::PARAM_RAMP => Decoded::ParamRamp {
+            track: r.track,
+            param: r.vp,
+            target: r.arg0,
+            ramp_frames: r.arg2 as u32,
         },
         op::TEMPO => Decoded::Tempo { cps: r.arg0 },
         op::NOP => Decoded::Nop,

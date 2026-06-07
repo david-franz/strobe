@@ -282,4 +282,10 @@ describe("Hap → events compiler", () => {
     expect(ramp!.arg0).toBeGreaterThanOrEqual(300);
     expect(ramp!.arg0).toBeLessThanOrEqual(1200);
   });
+
+  it("a continuous per-voice param (pan) samples per onset, not a ParamRamp", () => {
+    const recs = tickOnce(note("c2").saw().pan(sine).query);
+    expect(recs.some((r) => r.op === 0x11)).toBe(false); // no audio-thread ramp for a per-voice param
+    expect(recs.some((r) => r.op === 0x10)).toBe(true); // a per-onset ParamSet instead
+  });
 });
