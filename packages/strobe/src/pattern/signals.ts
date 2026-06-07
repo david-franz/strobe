@@ -55,8 +55,18 @@ installSignalMethods();
 
 /** True if `p` is a continuous signal (its haps have `whole === undefined`). The scheduler
  *  uses this to choose per-note sampling vs a ParamRamp, and to refuse a signal as a
- *  top-level (untriggerable) track pattern. */
+ *  top-level (untriggerable) track pattern.
+ *
+ *  Continuity is a structural property of the (immutable) pattern, so the result is memoized
+ *  per pattern object — the scheduler calls this every tick on the same signal objects, and a
+ *  full-cycle query each time was needless allocation/GC pressure on the hot path. */
+const continuousCache = new WeakMap<object, boolean>();
 export function isContinuousPattern(p: Pat<unknown>): boolean {
+  if (typeof p !== "object" || p === null) return false;
+  const cached = continuousCache.get(p);
+  if (cached !== undefined) return cached;
   const haps = queryArc(p, 0, 1);
-  return haps.length > 0 && haps.every((h) => h.whole === undefined);
+  const result = haps.length > 0 && haps.every((h) => h.whole === undefined);
+  continuousCache.set(p, result);
+  return result;
 }

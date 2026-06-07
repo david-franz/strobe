@@ -156,6 +156,9 @@ export class Scheduler {
   private scheduledUntilCycle = 0;
   private seq = 0;
   private voiceCtr = 1;
+  /** Last value sent per (track, packed-fx-id), so an unchanged track-fx param isn't re-sent
+   *  on every note (persistent chain state — re-sending floods the tick and the ring). */
+  private lastFx = new Map<number, number>();
   private readonly opts: Required<SchedulerOpts>;
 
   constructor(
@@ -210,7 +213,7 @@ export class Scheduler {
         if (key === "sidechain" && route.kind === "trackFx") {
           const m = /^p(\d+)$/.exec(value);
           if (m) {
-            out.push(trackFx(track, onsetFrame, packFx(route.slot, route.param), parseInt(m[1], 10)));
+            this.pushFx(track, onsetFrame, packFx(route.slot, route.param), parseInt(m[1], 10), out);
           }
         }
         continue;
@@ -229,8 +232,18 @@ export class Scheduler {
       } else {
         const v = num(value, hap.part.begin);
         if (route.kind === "paramSet") out.push(paramSet(track, onsetFrame, id, v));
-        else out.push(trackFx(track, onsetFrame, id, v));
+        else this.pushFx(track, onsetFrame, id, v, out);
       }
+    }
+  }
+
+  /** Emit a track-fx event only when its value changed since last time (chain state persists,
+   *  so a constant `.room`/`.dist`/… needn't re-send on every note). */
+  private pushFx(track: number, frame: number, id: number, v: number, out: RawEvent[]): void {
+    const key = track * 0x10000 + id;
+    if (this.lastFx.get(key) !== v) {
+      this.lastFx.set(key, v);
+      out.push(trackFx(track, frame, id, v));
     }
   }
 

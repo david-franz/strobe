@@ -235,6 +235,12 @@ describe("Hap → events compiler", () => {
     expect(fx.arg0).toBeCloseTo(0.3, 6);
   });
 
+  it("a constant track-fx param is sent once per cycle, but notes are never deduped", () => {
+    const recs = tickOnce(sound("saw*4").room(0.3).query);
+    expect(recs.filter((r) => r.op === 0x01).length).toBe(4); // every note still fires
+    expect(recs.filter((r) => r.op === 0x30).length).toBe(1); // constant reverb send sent once, not 4×
+  });
+
   it(".delay(0.4) emits a TrackFx send-level on the delay bus", () => {
     const fx = tickOnce(sound("saw").delay(0.4).query).find((r) => r.op === 0x30)!;
     expect(fx.vp).toBe(packFx(0xff, 0x11)); // CHAIN_SLOT, delay send level (bus 1)
