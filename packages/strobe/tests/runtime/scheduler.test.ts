@@ -257,6 +257,14 @@ describe("Hap → events compiler", () => {
     expect(crush.vp).toBe(packFx(3, 0x02)); // bitcrush slot 3, bits
   });
 
+  it(".chorus and .phaser route to their modulation slots", () => {
+    const ch = tickOnce(sound("saw").chorus(0.7).query).find((r) => r.op === 0x30)!;
+    expect(ch.vp).toBe(packFx(4, 0x03)); // chorus slot 4, depth
+    expect(ch.arg0).toBeCloseTo(0.7, 6);
+    const ph = tickOnce(sound("saw").phaser().query).find((r) => r.op === 0x30)!;
+    expect(ph.vp).toBe(packFx(6, 0x03)); // phaser slot 6, depth (default)
+  });
+
   it("a continuous lpf signal emits a ParamRamp (0x11)", () => {
     const ramp = tickOnce(note("c2").saw().lpf(sine.range(300, 1200).slow(8)).query).find(
       (r) => r.op === 0x11,

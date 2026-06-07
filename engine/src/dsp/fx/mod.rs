@@ -13,6 +13,7 @@ pub mod chain;
 pub mod delay;
 pub mod distortion;
 pub mod filter_eq;
+pub mod modulation;
 pub mod reverb;
 pub mod sends;
 pub mod sidechain;
@@ -60,6 +61,9 @@ pub fn build_track_chain(sr: f32) -> TrackEffects {
     fx.install(SLOT_EQ as usize, Box::new(filter_eq::Eq::new(sr)));
     fx.install(SLOT_DIST as usize, Box::new(distortion::Distort::new(sr)));
     fx.install(SLOT_CRUSH as usize, Box::new(bitcrush::Bitcrush::new(sr)));
+    fx.install(SLOT_CHORUS as usize, Box::new(modulation::Chorus::new(sr)));
+    fx.install(SLOT_FLANGER as usize, Box::new(modulation::Flanger::new(sr)));
+    fx.install(SLOT_PHASER as usize, Box::new(modulation::Phaser::new(sr)));
     fx
 }
 

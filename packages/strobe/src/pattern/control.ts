@@ -24,6 +24,9 @@ export interface ControlMap {
   dist?: number | Pat<number>; // distortion drive (≥0.1)
   crush?: number | Pat<number>; // bitcrush bit depth (1..16)
   downsample?: number | Pat<number>; // bitcrush sample-and-hold factor (1..64)
+  chorus?: number | Pat<number>; // chorus depth (0..1)
+  flanger?: number | Pat<number>; // flanger depth (0..1)
+  phaser?: number | Pat<number>; // phaser depth (0..1)
   attack?: number;
   decay?: number;
   sustain?: number;
@@ -45,6 +48,9 @@ const SLOT_FILTER = 0;
 const SLOT_EQ = 1;
 const SLOT_DIST = 2;
 const SLOT_CRUSH = 3;
+const SLOT_CHORUS = 4;
+const SLOT_FLANGER = 5;
+const SLOT_PHASER = 6;
 const SLOT_DUCK = 8;
 const CHAIN_SLOT = 0xff; // chain-level params (send levels) rather than a numbered slot
 const SEND_REVERB = 0;
@@ -63,6 +69,7 @@ const EQ_HIGH_GAIN = 0x19;
 const DIST_DRIVE = 0x02;
 const BC_BITS = 0x02;
 const BC_DOWNSAMPLE = 0x03;
+const MOD_DEPTH = 0x03; // chorus/flanger/phaser depth
 
 /** Pack a track-effect param id: high byte = fx slot, low byte = fx param. Matches `pack_fx`
  *  in engine/src/dsp/fx/mod.rs. */
@@ -85,6 +92,9 @@ export const PARAM_REGISTRY: Record<string, Routing> = {
   dist: { kind: "trackFx", slot: SLOT_DIST, param: DIST_DRIVE },
   crush: { kind: "trackFx", slot: SLOT_CRUSH, param: BC_BITS },
   downsample: { kind: "trackFx", slot: SLOT_CRUSH, param: BC_DOWNSAMPLE },
+  chorus: { kind: "trackFx", slot: SLOT_CHORUS, param: MOD_DEPTH },
+  flanger: { kind: "trackFx", slot: SLOT_FLANGER, param: MOD_DEPTH },
+  phaser: { kind: "trackFx", slot: SLOT_PHASER, param: MOD_DEPTH },
   attack: { kind: "paramSet", param: 2 },
   decay: { kind: "paramSet", param: 3 },
   sustain: { kind: "paramSet", param: 4 },
@@ -109,6 +119,9 @@ export const PARAM_RAMP_KEYS = new Set([
   "dist",
   "crush",
   "downsample",
+  "chorus",
+  "flanger",
+  "phaser",
   "pan",
   "gain",
   "room",
