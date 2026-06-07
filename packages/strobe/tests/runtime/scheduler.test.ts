@@ -265,6 +265,15 @@ describe("Hap → events compiler", () => {
     expect(ph.vp).toBe(packFx(6, 0x03)); // phaser slot 6, depth (default)
   });
 
+  it(".comp and .sidechain('p1') route to the dynamics slots", () => {
+    const comp = tickOnce(sound("bd").comp(8).query).find((r) => r.op === 0x30)!;
+    expect(comp.vp).toBe(packFx(7, 0x03)); // compressor slot 7, ratio
+    expect(comp.arg0).toBeCloseTo(8, 6);
+    const sc = tickOnce(sound("saw").sidechain("p1").query).find((r) => r.op === 0x30)!;
+    expect(sc.vp).toBe(packFx(8, 0x02)); // duck slot 8, source
+    expect(sc.arg0).toBeCloseTo(1, 6); // source = track 1 (p1)
+  });
+
   it("a continuous lpf signal emits a ParamRamp (0x11)", () => {
     const ramp = tickOnce(note("c2").saw().lpf(sine.range(300, 1200).slow(8)).query).find(
       (r) => r.op === 0x11,

@@ -27,6 +27,7 @@ export interface ControlMap {
   chorus?: number | Pat<number>; // chorus depth (0..1)
   flanger?: number | Pat<number>; // flanger depth (0..1)
   phaser?: number | Pat<number>; // phaser depth (0..1)
+  comp?: number | Pat<number>; // compressor ratio (1..20)
   attack?: number;
   decay?: number;
   sustain?: number;
@@ -51,6 +52,7 @@ const SLOT_CRUSH = 3;
 const SLOT_CHORUS = 4;
 const SLOT_FLANGER = 5;
 const SLOT_PHASER = 6;
+const SLOT_COMP = 7;
 const SLOT_DUCK = 8;
 const CHAIN_SLOT = 0xff; // chain-level params (send levels) rather than a numbered slot
 const SEND_REVERB = 0;
@@ -70,6 +72,8 @@ const DIST_DRIVE = 0x02;
 const BC_BITS = 0x02;
 const BC_DOWNSAMPLE = 0x03;
 const MOD_DEPTH = 0x03; // chorus/flanger/phaser depth
+const COMP_RATIO = 0x03; // compressor ratio
+const DUCK_SOURCE = 0x02; // sidechain duck source-track id
 
 /** Pack a track-effect param id: high byte = fx slot, low byte = fx param. Matches `pack_fx`
  *  in engine/src/dsp/fx/mod.rs. */
@@ -95,6 +99,7 @@ export const PARAM_REGISTRY: Record<string, Routing> = {
   chorus: { kind: "trackFx", slot: SLOT_CHORUS, param: MOD_DEPTH },
   flanger: { kind: "trackFx", slot: SLOT_FLANGER, param: MOD_DEPTH },
   phaser: { kind: "trackFx", slot: SLOT_PHASER, param: MOD_DEPTH },
+  comp: { kind: "trackFx", slot: SLOT_COMP, param: COMP_RATIO },
   attack: { kind: "paramSet", param: 2 },
   decay: { kind: "paramSet", param: 3 },
   sustain: { kind: "paramSet", param: 4 },
@@ -103,7 +108,7 @@ export const PARAM_REGISTRY: Record<string, Routing> = {
   speed: { kind: "trigField", field: "speed" },
   room: { kind: "trackFx", slot: CHAIN_SLOT, param: CHAIN_SEND_BASE + SEND_REVERB },
   delay: { kind: "trackFx", slot: CHAIN_SLOT, param: CHAIN_SEND_BASE + SEND_DELAY },
-  sidechain: { kind: "trackFx", slot: SLOT_DUCK, param: 0x02 }, // source track (feature 06)
+  sidechain: { kind: "trackFx", slot: SLOT_DUCK, param: DUCK_SOURCE }, // source track id (a string "p1")
 };
 
 /** Keys the engine can ramp (the scheduler may emit a ParamRamp instead of a per-note
@@ -122,6 +127,7 @@ export const PARAM_RAMP_KEYS = new Set([
   "chorus",
   "flanger",
   "phaser",
+  "comp",
   "pan",
   "gain",
   "room",

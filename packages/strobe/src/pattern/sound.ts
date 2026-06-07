@@ -65,6 +65,7 @@ declare module "./pattern" {
     chorus(depth?: number | Pat<number>): Pat<ControlMap>;
     flanger(depth?: number | Pat<number>): Pat<ControlMap>;
     phaser(depth?: number | Pat<number>): Pat<ControlMap>;
+    comp(ratio?: number | Pat<number>): Pat<ControlMap>;
     room(v: Val): Pat<ControlMap>;
     delay(v: Val): Pat<ControlMap>;
     note(v: number): Pat<ControlMap>;
@@ -117,6 +118,9 @@ export function installSoundMethods(): void {
   };
   proto.phaser = function (this: Pat<ControlMap>, depth: number | Pat<number> = 0.6) {
     return this.fmap((cm) => ({ ...cm, phaser: depth }));
+  };
+  proto.comp = function (this: Pat<ControlMap>, ratio: number | Pat<number> = 4) {
+    return this.fmap((cm) => ({ ...cm, comp: ratio }));
   };
   proto.room = merge("room");
   proto.delay = merge("delay");

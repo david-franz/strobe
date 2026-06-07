@@ -335,6 +335,51 @@ mod tests {
     }
 
     #[test]
+    fn sidechain_ducks_the_target_against_the_source_through_render() {
+        use crate::dsp::fx::{dynamics::DUCK_SOURCE, pack_fx, SLOT_DUCK};
+        use crate::graph::InstrumentConfig;
+
+        // The headline pump: a held bass on p2 ducked by the kick on p1. The kick is identical in
+        // both runs, so a drop in total energy with the sidechain on is the bass being ducked.
+        let total_energy = |with_sc: bool| -> f32 {
+            let drops = Arc::new(AtomicU64::new(0));
+            let (producer, consumer) = ring(256, drops);
+            let pool = VoicePool::new(
+                &[
+                    (0, InstrumentDef::Drum(DrumConfig::kick()), 0),
+                    (5, InstrumentDef::Synth(InstrumentConfig::default()), 0),
+                ],
+                48_000.0,
+                4,
+            );
+            let mut st = AudioState::new(
+                2,
+                48_000.0,
+                Arc::new(AtomicU64::new(0)),
+                consumer,
+                pool,
+                MasterBus::new(48_000.0),
+                Arc::new(EngineStatsShared::default()),
+            );
+            producer.try_push(EventRecord::note_on(1, 0, 0, 0.0, 1.0, 0.0, 0.0, 1)); // kick on p1
+            producer.try_push(EventRecord::note_on(2, 0, 1, 110.0, 1.0, 0.0, 5.0, 2)); // bass on p2 (held)
+            if with_sc {
+                use crate::dsp::fx::dynamics::DUCK_AMOUNT;
+                producer.try_push(track_fx(2, 0, pack_fx(SLOT_DUCK, DUCK_SOURCE), 1.0)); // source = track 1
+                producer.try_push(track_fx(2, 0, pack_fx(SLOT_DUCK, DUCK_AMOUNT), 1.0)); // full duck depth
+            }
+            let mut buf = vec![0.0f32; 4096 * 2];
+            render(&mut st, &mut buf);
+            // The kick is identical in both runs, so the difference is purely the bass ducking.
+            buf.iter().map(|x| x * x).sum::<f32>()
+        };
+        let open = total_energy(false);
+        let ducked = total_energy(true);
+        assert!(open > 0.0, "the bass sounds");
+        assert!(ducked < open * 0.85, "the sidechain ducks the bass to the kick ({ducked} vs {open})");
+    }
+
+    #[test]
     fn frame_counter_is_exact_and_monotonic() {
         let (mut st, _p) = state(2);
         let mut buf = vec![0.0f32; 256 * 2];

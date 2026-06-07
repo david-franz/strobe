@@ -205,7 +205,16 @@ export class Scheduler {
       if (HANDLED.has(key) || value == null) continue;
       const route = PARAM_REGISTRY[key];
       if (!route || route.kind === "noteField" || route.kind === "trigField") continue;
-      if (typeof value === "string") continue; // e.g. sidechain target (Phase 3)
+      if (typeof value === "string") {
+        // sidechain("p1") → duck source = track number 1 (the only string-valued control).
+        if (key === "sidechain" && route.kind === "trackFx") {
+          const m = /^p(\d+)$/.exec(value);
+          if (m) {
+            out.push(trackFx(track, onsetFrame, packFx(route.slot, route.param), parseInt(m[1], 10)));
+          }
+        }
+        continue;
+      }
 
       const id = route.kind === "trackFx" ? packFx(route.slot, route.param) : route.param;
       if (
