@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Engine } from "../../src/backend/engine";
-import type { Pattern } from "../../src/pattern/pattern";
+import { type Pattern, pure } from "../../src/pattern/pattern";
 import { Clock } from "../../src/clock/clock";
 import { Scheduler, writeNoteOn, writeTempo } from "../../src/runtime/scheduler";
 import { setTrack } from "../../src/runtime/tracks";
@@ -175,7 +175,16 @@ describe("look-ahead scheduling", () => {
 // ── The Hap → events compiler (Phase 2) ───────────────────────────────────────
 
 function records(pushed: ArrayBuffer[]) {
-  const recs: { op: number; track: number; vp: number; arg0: number; arg1: number; frame: number }[] = [];
+  const recs: {
+    op: number;
+    track: number;
+    vp: number;
+    arg0: number;
+    arg1: number;
+    arg2: number;
+    arg3: number;
+    frame: number;
+  }[] = [];
   for (const b of pushed) {
     const v = new DataView(b);
     for (let o = 0; o < b.byteLength; o += 32) {
@@ -185,6 +194,8 @@ function records(pushed: ArrayBuffer[]) {
         vp: v.getUint32(o + 8, true),
         arg0: v.getFloat32(o + 12, true),
         arg1: v.getFloat32(o + 16, true),
+        arg2: v.getFloat32(o + 20, true),
+        arg3: v.getFloat32(o + 24, true),
         frame: v.getUint32(o + 4, true),
       });
     }
@@ -235,6 +246,18 @@ describe("Hap → events compiler", () => {
     const fx = tickOnce(sound("saw").room(0.3).query).find((r) => r.op === 0x30)!;
     expect(fx.vp).toBe(packFx(0xff, 0x10)); // CHAIN_SLOT, reverb send level
     expect(fx.arg0).toBeCloseTo(0.3, 6);
+  });
+
+  it("a sample hap compiles to a TrigSample (0x20), not a NoteOn", () => {
+    const pat = pure({ sampleId: 7, _frames: 48000, begin: 0.5, speed: 2, gain: 0.8 });
+    const recs = tickOnce(pat.query);
+    const ts = recs.find((r) => r.op === 0x20)!;
+    expect(ts).toBeTruthy();
+    expect(ts.arg3).toBe(7); // sample id
+    expect(ts.arg0).toBeCloseTo(2, 6); // speed
+    expect(ts.arg1).toBeCloseTo(0.8, 6); // gain
+    expect(ts.arg2).toBeCloseTo(24000, 0); // start = begin 0.5 × 48000 frames
+    expect(recs.some((r) => r.op === 0x01)).toBe(false); // no NoteOn for a sample
   });
 
   it("a constant track-fx param is sent once per cycle, but notes are never deduped", () => {

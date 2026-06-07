@@ -159,6 +159,7 @@ impl Engine {
             pool,
             bus,
             self.stats.clone(),
+            self.sample_bank.clone(),
         );
         let stream = audio_io::build_stream(&device, &config, state)?;
         audio_io::play(&stream)?;

@@ -4,6 +4,7 @@
 
 pub mod drum;
 pub mod oscillator;
+pub mod sampler;
 pub mod synth;
 
 pub use oscillator::{OscConfig, OscKind, Oscillator, WavetableBank};

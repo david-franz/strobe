@@ -12,20 +12,32 @@ use crate::dsp::effects::MasterBus;
 use crate::dsp::fx::TrackEffects;
 use crate::protocol::event::{self, Decoded};
 use crate::protocol::ring::RingConsumer;
+use crate::sample::bank::SampleBank;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
+use crate::voices::sampler::TrigOpts;
 use crate::voices::ParamId;
 
+#[allow(clippy::too_many_arguments)]
 fn apply(
     dec: Decoded,
+    off: usize,
     pool: &mut VoicePool,
     bus: &mut MasterBus,
     chains: &mut [TrackEffects],
+    bank: &SampleBank,
     stats: &EngineStatsShared,
 ) {
     match dec {
         Decoded::NoteOn { track, voice, freq, vel, dur_frames, instrument } => {
             pool.note_on(track, instrument as u32, voice, freq, vel, dur_frames.max(0.0) as u64);
+        }
+        Decoded::TrigSample { track, sample_id, speed, gain, start, region_len, flags } => {
+            // RT-safe bank lookup; an unknown id is a no-op (never blocks). The voice handles
+            // the sub-buffer offset for sample-accurate landing.
+            if let Some(buf) = bank.lookup(sample_id) {
+                pool.trigger_sample(track, buf, speed, gain, start, TrigOpts::from_flags(flags, region_len), off);
+            }
         }
         Decoded::NoteOff { voice } => pool.note_off(voice),
         Decoded::ParamSet { track, param, value } => {
@@ -56,7 +68,6 @@ fn apply(
 /// Apply every event whose in-buffer offset is `<= pos` (including late events), then
 /// return the offset of the next event due *later* in this buffer (or `None`).
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn apply_due(
     consumer: &mut RingConsumer,
     base: u64,
@@ -65,6 +76,7 @@ fn apply_due(
     pool: &mut VoicePool,
     bus: &mut MasterBus,
     chains: &mut [TrackEffects],
+    bank: &SampleBank,
     stats: &EngineStatsShared,
 ) -> Option<usize> {
     while consumer.len() > 0 {
@@ -86,7 +98,7 @@ fn apply_due(
             if evf < base {
                 stats.late_events.fetch_add(1, Relaxed);
             }
-            apply(dec, pool, bus, chains, stats);
+            apply(dec, off, pool, bus, chains, bank, stats);
             consumer.advance(1);
         } else {
             return Some(off);
@@ -107,6 +119,7 @@ pub fn dispatch_and_render(
     pool: &mut VoicePool,
     bus: &mut MasterBus,
     chains: &mut [TrackEffects],
+    bank: &SampleBank,
     stats: &EngineStatsShared,
     tracks_l: &mut [Vec<f32>],
     tracks_r: &mut [Vec<f32>],
@@ -115,8 +128,8 @@ pub fn dispatch_and_render(
     let frames = frames as usize;
     let mut pos = 0usize;
     loop {
-        let next =
-            apply_due(consumer, base, buffer_end, pos, pool, bus, chains, stats).unwrap_or(frames);
+        let next = apply_due(consumer, base, buffer_end, pos, pool, bus, chains, bank, stats)
+            .unwrap_or(frames);
         let seg_end = next.min(frames);
         pool.render_segment(tracks_l, tracks_r, pos, seg_end);
         pos = seg_end;
@@ -124,6 +137,8 @@ pub fn dispatch_and_render(
             break;
         }
     }
+    // Sampler voices render the whole block (each applies its own sub-buffer offset).
+    pool.render_samplers(tracks_l, tracks_r, frames);
     pool.reap();
 }
 
@@ -164,9 +179,10 @@ mod tests {
     fn dispatch(c: &mut RingConsumer, base: u64, frames: u64, pool: &mut VoicePool, st: &EngineStatsShared) -> Vec<f32> {
         let mut bus = crate::dsp::effects::MasterBus::new(SR);
         let mut chains = empty_chains();
+        let bank = SampleBank::new();
         let mut tl = per_track(frames as usize);
         let mut tr = per_track(frames as usize);
-        dispatch_and_render(c, base, frames, pool, &mut bus, &mut chains, st, &mut tl, &mut tr);
+        dispatch_and_render(c, base, frames, pool, &mut bus, &mut chains, &bank, st, &mut tl, &mut tr);
         tl.swap_remove(1)
     }
 
@@ -225,9 +241,10 @@ mod tests {
         // Render a long tail; the released voice frees.
         let mut bus = crate::dsp::effects::MasterBus::new(SR);
         let mut chains = empty_chains();
+        let bank = SampleBank::new();
         let mut tl = per_track(SR as usize);
         let mut tr = per_track(SR as usize);
-        dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &mut bus, &mut chains, &st, &mut tl, &mut tr);
+        dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &mut bus, &mut chains, &bank, &st, &mut tl, &mut tr);
         assert_eq!(pool.active_count(), 0, "held voice released by NoteOff then freed");
     }
 

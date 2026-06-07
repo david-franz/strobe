@@ -130,6 +130,17 @@ pub enum Decoded {
         target: f32,
         ramp_frames: u32,
     },
+    /// Trigger a loaded sample (Phase 4). `vp` carries the region length in frames (0 = whole),
+    /// `flags_seq` the reverse/loop/interp flags.
+    TrigSample {
+        track: u16,
+        sample_id: u32,
+        speed: f32,
+        gain: f32,
+        start: f32,
+        region_len: u32,
+        flags: u32,
+    },
     Tempo {
         cps: f32,
     },
@@ -169,6 +180,15 @@ pub fn decode(r: &EventRecord) -> Result<Decoded, ()> {
             param: r.vp,
             target: r.arg0,
             ramp_frames: r.arg2 as u32,
+        },
+        op::TRIG_SAMPLE => Decoded::TrigSample {
+            track: r.track,
+            sample_id: r.arg3 as u32,
+            speed: r.arg0,
+            gain: r.arg1,
+            start: r.arg2,
+            region_len: r.vp,
+            flags: r.flags_seq,
         },
         op::TEMPO => Decoded::Tempo { cps: r.arg0 },
         op::NOP => Decoded::Nop,

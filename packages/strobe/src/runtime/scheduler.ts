@@ -22,6 +22,7 @@ const OP_NOTE_ON = 0x01;
 const OP_NOTE_OFF = 0x02;
 const OP_PARAM_SET = 0x10;
 const OP_PARAM_RAMP = 0x11;
+const OP_TRIG_SAMPLE = 0x20;
 const OP_TRACK_FX = 0x30;
 const OP_TEMPO = 0x40;
 
@@ -126,6 +127,47 @@ const trackFx = (track: number, frame: number, param: number, value: number): Ra
   encode: (v, i, seq) => writeSimple(v, i, OP_TRACK_FX, track, frame, param, value, 0, seq),
 });
 
+/** TrigSample (0x20): vp = region length (frames, 0 = whole), arg0=speed, arg1=gain,
+ *  arg2=start(frames), arg3=sample id, flags_seq = reverse/loop/interp flags. */
+function writeTrigSample(
+  view: DataView,
+  i: number,
+  track: number,
+  frame: number,
+  sampleId: number,
+  speed: number,
+  gain: number,
+  startFrames: number,
+  regionLen: number,
+  flags: number,
+): void {
+  const o = i * REC;
+  view.setUint8(o + 0, VERSION);
+  view.setUint8(o + 1, OP_TRIG_SAMPLE);
+  view.setUint16(o + 2, track, true);
+  view.setUint32(o + 4, frame >>> 0, true);
+  view.setUint32(o + 8, regionLen >>> 0, true);
+  view.setFloat32(o + 12, speed, true);
+  view.setFloat32(o + 16, gain, true);
+  view.setFloat32(o + 20, startFrames, true);
+  view.setFloat32(o + 24, sampleId, true);
+  view.setUint32(o + 28, flags >>> 0, true);
+}
+
+const trigSample = (
+  track: number,
+  frame: number,
+  sampleId: number,
+  speed: number,
+  gain: number,
+  startFrames: number,
+  regionLen: number,
+  flags: number,
+): RawEvent => ({
+  frame,
+  encode: (v, i) => writeTrigSample(v, i, track, frame, sampleId, speed, gain, startFrames, regionLen, flags),
+});
+
 // ── The Hap → events compiler ────────────────────────────────────────────────
 
 const HANDLED = new Set(["s", "note", "freq", "gain", "vel", "instrument"]);
@@ -190,18 +232,27 @@ export class Scheduler {
     const onsetFrame = this.clock.cycleToFrame(hap.part.begin);
     const durFrames = hap.whole ? this.clock.cyclesToFrames(hap.whole.end - hap.whole.begin) : 0;
 
-    const { id: instrument, drum } = resolveInstrument(cm);
-    const velSrc = cm.gain ?? (cm as Record<string, unknown>).vel ?? 0.9;
-    const vel = Math.min(1, Math.max(0, num(velSrc, hap.part.begin))); // velocity is 0..1
-    const freq =
-      cm.freq != null ? num(cm.freq, hap.part.begin) : cm.note != null ? noteToFreq(cm.note) : 0;
-
-    if (drum) {
-      out.push(noteOn(track, onsetFrame, 0, freq, vel, durFrames, instrument)); // one-shot
+    if (cm.sampleId != null) {
+      // A loaded sample → TrigSample (a one-shot voice, like a drum). begin is a 0..1 fraction.
+      const speed = num(cm.speed ?? 1, hap.part.begin);
+      const gain = Math.min(4, Math.max(0, num(cm.gain ?? 1, hap.part.begin)));
+      const startFrames = Math.round(num(cm.begin ?? 0, hap.part.begin) * (cm._frames ?? 0));
+      out.push(
+        trigSample(track, onsetFrame, cm.sampleId, speed, gain, startFrames, cm._regionLen ?? 0, cm._flags ?? 0),
+      );
     } else {
-      const voice = this.allocVoice();
-      out.push(noteOn(track, onsetFrame, voice, freq, vel, 0, instrument)); // held
-      if (hap.whole) out.push(noteOff(track, this.clock.cycleToFrame(hap.whole.end), voice));
+      const { id: instrument, drum } = resolveInstrument(cm);
+      const velSrc = cm.gain ?? (cm as Record<string, unknown>).vel ?? 0.9;
+      const vel = Math.min(1, Math.max(0, num(velSrc, hap.part.begin))); // velocity is 0..1
+      const freq =
+        cm.freq != null ? num(cm.freq, hap.part.begin) : cm.note != null ? noteToFreq(cm.note) : 0;
+      if (drum) {
+        out.push(noteOn(track, onsetFrame, 0, freq, vel, durFrames, instrument)); // one-shot
+      } else {
+        const voice = this.allocVoice();
+        out.push(noteOn(track, onsetFrame, voice, freq, vel, 0, instrument)); // held
+        if (hap.whole) out.push(noteOff(track, this.clock.cycleToFrame(hap.whole.end), voice));
+      }
     }
 
     for (const [key, value] of Object.entries(cm)) {

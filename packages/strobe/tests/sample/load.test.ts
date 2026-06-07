@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadFile, loadPcm, setActiveSampleEngine } from "../../src/sample/load";
+import { loadFile, loadPcm, sample, setActiveSampleEngine } from "../../src/sample/load";
+import { queryArc } from "../../src/pattern/pattern";
 import type { Engine } from "../../src/backend/engine";
 
 function fakeEngine() {
@@ -63,5 +64,15 @@ describe("sample load", () => {
 
   it("loading before the runtime starts throws a clear error", () => {
     expect(() => loadFile("/x/amen.wav")).toThrow(/no active engine/);
+  });
+
+  it("sample() loads and produces a one-shot trigger pattern", () => {
+    const { engine } = fakeEngine();
+    setActiveSampleEngine(engine);
+    const pat = sample("/x/amen.wav");
+    const haps = queryArc(pat, 0, 1);
+    expect(haps.length).toBe(1);
+    expect(haps[0].value.sampleId).toBe(0);
+    expect(haps[0].value._frames).toBe(1000);
   });
 });

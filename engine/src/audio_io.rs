@@ -14,6 +14,7 @@ use crate::dsp::effects::MasterBus;
 use crate::dsp::fx::{self, FxCtx, SendRouter, SidechainBus, TrackEffects, MAX_TRACKS};
 use crate::error::AudioError;
 use crate::protocol::ring::RingConsumer;
+use crate::sample::SampleBank;
 use crate::scheduler;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
@@ -83,6 +84,7 @@ pub struct AudioState {
     chains: Vec<TrackEffects>,
     sends: SendRouter,
     sidechain: SidechainBus,
+    sample_bank: Arc<SampleBank>,
     mix_l: Vec<f32>,
     mix_r: Vec<f32>,
 }
@@ -97,6 +99,7 @@ impl AudioState {
         pool: VoicePool,
         bus: MasterBus,
         stats: Arc<EngineStatsShared>,
+        sample_bank: Arc<SampleBank>,
     ) -> Self {
         let n = MAX_TRACKS + 1; // index by track id; 0 = master/global, 1.. = p1..
         Self {
@@ -108,6 +111,7 @@ impl AudioState {
             pool,
             bus,
             stats,
+            sample_bank,
             track_l: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
             track_r: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
             chains: (0..n).map(|_| fx::build_track_chain(sample_rate)).collect(),
@@ -155,8 +159,8 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
 
     // Disjoint borrows of the rack fields for the rest of the loop.
     let AudioState {
-        frame_clock, consumer, pool, bus, chains, sends, sidechain, stats, track_l, track_r,
-        mix_l, mix_r, sample_rate, cps, ..
+        frame_clock, consumer, pool, bus, chains, sends, sidechain, sample_bank, stats, track_l,
+        track_r, mix_l, mix_r, sample_rate, cps, ..
     } = st;
 
     // Zero per-track buffers + the master mix for this block.
@@ -168,7 +172,7 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
     mix_r[..frames].fill(0.0);
 
     // Drain events (updating chains) + render voices into their per-track buffers.
-    scheduler::dispatch_and_render(consumer, base, frames as u64, pool, bus, chains, stats, track_l, track_r);
+    scheduler::dispatch_and_render(consumer, base, frames as u64, pool, bus, chains, &**sample_bank, stats, track_l, track_r);
 
     // Pass 1: tap every track's pre-FX level into the sidechain bus *before* any chain reads it,
     // so a duck can follow any source track regardless of track order.
@@ -237,6 +241,7 @@ mod tests {
             pool,
             MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
+            Arc::new(SampleBank::new()),
         );
         (st, producer)
     }
@@ -282,6 +287,7 @@ mod tests {
                 pool,
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
+                Arc::new(SampleBank::new()),
             );
             producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1));
             if with_filter {
@@ -295,6 +301,49 @@ mod tests {
         let filtered = energy(true);
         assert!(open > 0.0, "the dry note produced sound");
         assert!(filtered < open * 0.6, "the track LP removed energy ({filtered} vs {open})");
+    }
+
+    fn trig_sample(track: u16, frame: u32, id: u32, speed: f32, gain: f32, start: f32) -> EventRecord {
+        EventRecord {
+            version: 1,
+            opcode: 0x20,
+            track,
+            frame,
+            vp: 0, // region_len 0 = whole buffer
+            arg0: speed,
+            arg1: gain,
+            arg2: start,
+            arg3: id as f32,
+            flags_seq: 0,
+        }
+    }
+
+    #[test]
+    fn trig_sample_plays_through_render_with_offset() {
+        use crate::sample::SampleBuffer;
+        let bank = Arc::new(SampleBank::new());
+        let ramp: Vec<f32> = (0..2000).map(|i| i as f32 / 2000.0).collect();
+        let id = bank.insert(Arc::new(SampleBuffer::from_planar(vec![ramp], 48_000)));
+
+        let drops = Arc::new(AtomicU64::new(0));
+        let (producer, consumer) = ring(256, drops);
+        let pool = VoicePool::new(&[(0, InstrumentDef::Drum(DrumConfig::kick()), 0)], 48_000.0, 4);
+        let mut st = AudioState::new(
+            2,
+            48_000.0,
+            Arc::new(AtomicU64::new(0)),
+            consumer,
+            pool,
+            MasterBus::new(48_000.0),
+            Arc::new(EngineStatsShared::default()),
+            bank,
+        );
+        producer.try_push(trig_sample(1, 200, id, 1.0, 1.0, 0.0)); // land at frame 200
+        let mut buf = vec![0.0f32; 1024 * 2];
+        render(&mut st, &mut buf);
+        // sub-buffer offset: silent before frame 200, audible after.
+        assert!(buf[..200 * 2].iter().all(|&x| x.abs() < 1e-4), "silent before the offset");
+        assert!(buf[600 * 2..].iter().any(|&x| x.abs() > 1e-4), "the sample plays after the offset");
     }
 
     #[test]
@@ -314,6 +363,7 @@ mod tests {
             pool,
             MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
+            Arc::new(SampleBank::new()),
         );
         producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1)); // bright saw, held
         // ParamRamp the track LP cutoff from its 1 kHz default down to 150 Hz over 4000 frames.
@@ -356,6 +406,7 @@ mod tests {
                 pool,
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
+                Arc::new(SampleBank::new()),
             );
             producer.try_push(kick_at(0));
             if with_send {
@@ -400,6 +451,7 @@ mod tests {
                 pool,
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
+                Arc::new(SampleBank::new()),
             );
             producer.try_push(EventRecord::note_on(1, 0, 0, 0.0, 1.0, 0.0, 0.0, 1)); // kick on p1
             producer.try_push(EventRecord::note_on(2, 0, 1, 110.0, 1.0, 0.0, 5.0, 2)); // bass on p2 (held)
@@ -481,6 +533,7 @@ mod tests {
             pool,
             MasterBus::new(cfg.sample_rate as f32),
             Arc::new(EngineStatsShared::default()),
+            Arc::new(SampleBank::new()),
         );
         let stream = build_stream(&device, &config, st).expect("build");
         play(&stream).expect("play");

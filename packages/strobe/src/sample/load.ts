@@ -8,6 +8,8 @@
 // sketches is a later refinement.
 
 import type { Engine, LoadedSample } from "../backend/engine";
+import { Pat, pure } from "../pattern/pattern";
+import type { ControlMap } from "../pattern/control";
 
 export interface SampleHandle {
   /** Engine sample id — what `TrigSample` carries. */
@@ -71,4 +73,12 @@ export function loadPcm(
 /** Test/introspection: how many distinct sources are cached this session. */
 export function loadedCount(): number {
   return cache.size;
+}
+
+/** `sample(pathOrHandle)` → a pattern that triggers a loaded sample once per cycle. Loads
+ *  synchronously on first use (idempotent). The chop/slice/stretch chain builds on this; chain
+ *  `.speed()`, `.begin()`, `.gain()`, plus the per-track effects, exactly like a synth voice. */
+export function sample(src: string | SampleHandle): Pat<ControlMap> {
+  const h = typeof src === "string" ? loadFile(src) : src;
+  return pure<ControlMap>({ s: h.name ?? "sample", sampleId: h.id, _frames: h.frames });
 }

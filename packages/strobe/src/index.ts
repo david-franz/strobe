@@ -50,3 +50,6 @@ export { PRESETS, resolveNote } from "./instruments/presets";
 export type { PresetName, NoteValue } from "./instruments/presets";
 export { noteToHz, midiToHz, synth } from "./instruments/synth";
 export { drum } from "./instruments/drums";
+
+// ── Phase 4 sampling ──
+export { sample, loadFile, loadPcm, type SampleHandle } from "./sample/load";

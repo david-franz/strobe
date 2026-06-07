@@ -35,6 +35,12 @@ export interface ControlMap {
   room?: number | Pat<number>; // reverb send level
   delay?: number | Pat<number>; // delay send level
   sidechain?: string; // duck against named track (Phase 3; key accepted now)
+  // ── Sampler (Phase 4) ──
+  sampleId?: number; // engine sample id → emit a TrigSample instead of a NoteOn
+  begin?: number | Pat<number>; // region start as a 0..1 fraction of the sample
+  _frames?: number; // sample length (frames at engine rate), for begin/chop → start frames
+  _regionLen?: number; // region length in frames (chop/slice); 0 = to end
+  _flags?: number; // TrigSample flags (reverse/loop/interp)
   [k: string]: number | string | Pat<number> | undefined;
 }
 

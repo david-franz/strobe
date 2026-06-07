@@ -3,15 +3,28 @@
 //! resolution so a `NoteOff` finds the right voice even after a steal. Real-time-safe:
 //! no allocation, no locks on the audio thread (the slot array is built once at start).
 
+use std::sync::Arc;
+
 use crate::graph::InstrumentConfig;
+use crate::sample::bank::SampleBuffer;
 use crate::voices::drum::{DrumConfig, DrumVoice};
 use crate::voices::oscillator::WavetableBank;
+use crate::voices::sampler::{SamplerVoice, TrigOpts};
 use crate::voices::synth::SynthVoice;
 use crate::voices::{ParamId, Voice};
 
 /// Pre-built voice slots per instrument. Generous — the roadmap's 16-voice bar fits with
 /// headroom.
 pub const SLOTS_PER_INSTRUMENT: usize = 24;
+/// Pre-built sampler voices shared across all tracks (Phase 4).
+pub const SAMPLER_VOICES: usize = 24;
+
+/// A pre-allocated sampler-voice slot (Phase 4). Triggered by `TrigSample`, not `NoteOn`.
+struct SamplerSlot {
+    voice: SamplerVoice,
+    track: u16,
+    started: u64,
+}
 
 /// How the engine builds a voice for an instrument id.
 pub enum InstrumentDef {
@@ -48,6 +61,7 @@ struct Slot {
 /// only touch the pre-allocated slots.
 pub struct VoicePool {
     slots: Vec<Slot>,
+    samplers: Vec<SamplerSlot>,
     frame: u64,
 }
 
@@ -70,7 +84,9 @@ impl VoicePool {
                 });
             }
         }
-        Self { slots, frame: 0 }
+        let samplers =
+            (0..SAMPLER_VOICES).map(|_| SamplerSlot { voice: SamplerVoice::new(), track: 0, started: 0 }).collect();
+        Self { slots, samplers, frame: 0 }
     }
 
     pub fn active_count(&self) -> usize {
@@ -204,6 +220,63 @@ impl VoicePool {
         }
     }
 
+    /// Trigger a loaded sample on `track` (Phase 4). Allocates a free sampler voice, stealing the
+    /// oldest if all are busy, at sub-buffer `offset`. Arithmetic + `Arc::clone` only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn trigger_sample(
+        &mut self,
+        track: u16,
+        buf: Arc<SampleBuffer>,
+        speed: f32,
+        gain: f32,
+        start_frame: f32,
+        opts: TrigOpts,
+        offset: usize,
+    ) {
+        if self.samplers.is_empty() {
+            return;
+        }
+        let idx = self.samplers.iter().position(|s| !s.voice.is_active()).unwrap_or_else(|| {
+            self.samplers
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, s)| s.started)
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        });
+        self.frame += 1;
+        let frame = self.frame;
+        let s = &mut self.samplers[idx];
+        s.track = track;
+        s.started = frame;
+        s.voice.trigger_at(offset, buf, speed, gain, start_frame, opts);
+    }
+
+    /// Render every active sampler voice into its track's buffer over the full block (each voice
+    /// applies its own sub-buffer offset). Call once per buffer.
+    pub fn render_samplers(
+        &mut self,
+        tracks_l: &mut [Vec<f32>],
+        tracks_r: &mut [Vec<f32>],
+        frames: usize,
+    ) {
+        if tracks_l.is_empty() {
+            return;
+        }
+        let last = tracks_l.len() - 1;
+        for s in self.samplers.iter_mut() {
+            if s.voice.is_active() {
+                let t = (s.track as usize).min(last);
+                s.voice.render(&mut tracks_l[t][..frames], &mut tracks_r[t][..frames]);
+            }
+        }
+    }
+
+    /// Active sampler voices (telemetry/tests).
+    pub fn active_sampler_count(&self) -> usize {
+        self.samplers.iter().filter(|s| s.voice.is_active()).count()
+    }
+
     /// Reclaim finished voices and refresh levels for stealing decisions. Once per buffer.
     pub fn reap(&mut self) {
         for s in self.slots.iter_mut() {
@@ -264,7 +337,7 @@ mod tests {
                 last_level: 0.0,
             })
             .collect();
-        VoicePool { slots, frame: 0 }
+        VoicePool { slots, samplers: Vec::new(), frame: 0 }
     }
 
     /// A pool with `n` voices of instrument 0 (choke 0).
