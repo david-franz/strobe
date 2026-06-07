@@ -21,6 +21,9 @@ export interface ControlMap {
   eqLow?: number | Pat<number>; // EQ low-shelf gain (dB)
   eqMid?: number | Pat<number>; // EQ peaking-mid gain (dB, at ~1 kHz)
   eqHigh?: number | Pat<number>; // EQ high-shelf gain (dB)
+  dist?: number | Pat<number>; // distortion drive (≥0.1)
+  crush?: number | Pat<number>; // bitcrush bit depth (1..16)
+  downsample?: number | Pat<number>; // bitcrush sample-and-hold factor (1..64)
   attack?: number;
   decay?: number;
   sustain?: number;
@@ -40,6 +43,8 @@ export type Routing =
 // ── Effect-rack layout — mirrors engine/src/dsp/fx (mod.rs + filter_eq.rs) ─────────
 const SLOT_FILTER = 0;
 const SLOT_EQ = 1;
+const SLOT_DIST = 2;
+const SLOT_CRUSH = 3;
 const SLOT_DUCK = 8;
 const CHAIN_SLOT = 0xff; // chain-level params (send levels) rather than a numbered slot
 const SEND_REVERB = 0;
@@ -54,6 +59,10 @@ const PF_CUTOFF_BP = 0x05;
 const EQ_LOW_GAIN = 0x11;
 const EQ_MID_GAIN = 0x15;
 const EQ_HIGH_GAIN = 0x19;
+// Distortion (slot 2) + bitcrush (slot 3) params:
+const DIST_DRIVE = 0x02;
+const BC_BITS = 0x02;
+const BC_DOWNSAMPLE = 0x03;
 
 /** Pack a track-effect param id: high byte = fx slot, low byte = fx param. Matches `pack_fx`
  *  in engine/src/dsp/fx/mod.rs. */
@@ -73,6 +82,9 @@ export const PARAM_REGISTRY: Record<string, Routing> = {
   eqLow: { kind: "trackFx", slot: SLOT_EQ, param: EQ_LOW_GAIN },
   eqMid: { kind: "trackFx", slot: SLOT_EQ, param: EQ_MID_GAIN },
   eqHigh: { kind: "trackFx", slot: SLOT_EQ, param: EQ_HIGH_GAIN },
+  dist: { kind: "trackFx", slot: SLOT_DIST, param: DIST_DRIVE },
+  crush: { kind: "trackFx", slot: SLOT_CRUSH, param: BC_BITS },
+  downsample: { kind: "trackFx", slot: SLOT_CRUSH, param: BC_DOWNSAMPLE },
   attack: { kind: "paramSet", param: 2 },
   decay: { kind: "paramSet", param: 3 },
   sustain: { kind: "paramSet", param: 4 },
@@ -94,6 +106,9 @@ export const PARAM_RAMP_KEYS = new Set([
   "eqLow",
   "eqMid",
   "eqHigh",
+  "dist",
+  "crush",
+  "downsample",
   "pan",
   "gain",
   "room",

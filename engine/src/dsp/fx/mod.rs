@@ -8,8 +8,10 @@
 //! track owns a fixed set of insert slots in a fixed order; a slot is active once its `mix`
 //! parameter is raised above 0.
 
+pub mod bitcrush;
 pub mod chain;
 pub mod delay;
+pub mod distortion;
 pub mod filter_eq;
 pub mod reverb;
 pub mod sends;
@@ -56,6 +58,8 @@ pub fn build_track_chain(sr: f32) -> TrackEffects {
     let mut fx = TrackEffects::new(sr);
     fx.install(SLOT_FILTER as usize, Box::new(filter_eq::PerfFilter::new(sr)));
     fx.install(SLOT_EQ as usize, Box::new(filter_eq::Eq::new(sr)));
+    fx.install(SLOT_DIST as usize, Box::new(distortion::Distort::new(sr)));
+    fx.install(SLOT_CRUSH as usize, Box::new(bitcrush::Bitcrush::new(sr)));
     fx
 }
 

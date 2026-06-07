@@ -249,6 +249,14 @@ describe("Hap → events compiler", () => {
     expect(eq.arg0).toBeCloseTo(3, 6);
   });
 
+  it(".dist and .crush route to their own fx slots", () => {
+    const dist = tickOnce(sound("saw").dist(4).query).find((r) => r.op === 0x30)!;
+    expect(dist.vp).toBe(packFx(2, 0x02)); // distortion slot 2, drive
+    expect(dist.arg0).toBeCloseTo(4, 6);
+    const crush = tickOnce(sound("bd").crush(6).query).find((r) => r.op === 0x30)!;
+    expect(crush.vp).toBe(packFx(3, 0x02)); // bitcrush slot 3, bits
+  });
+
   it("a continuous lpf signal emits a ParamRamp (0x11)", () => {
     const ramp = tickOnce(note("c2").saw().lpf(sine.range(300, 1200).slow(8)).query).find(
       (r) => r.op === 0x11,
