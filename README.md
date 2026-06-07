@@ -53,7 +53,7 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 
 | Doc | What's in it |
 | --- | --- |
-| [docs/guide.md](docs/guide.md) | **User guide** — everything you can write today: mini-notation, sound/note, modifiers, combinators, signals, tracks |
+| [docs/guide.md](docs/guide.md) | **User guide** (indexed, one file per topic) — mini-notation, sound/note, modifiers, combinators, signals, effects, **sampling**, tracks |
 | [docs/architecture.md](docs/architecture.md) | The control/audio plane split, the bridge, the look-ahead scheduler, why none of it glitches |
 | [docs/pattern-model.md](docs/pattern-model.md) | `Pattern` / `Hap` / `TimeSpan`, mini-notation, the combinator vocabulary |
 | [docs/event-protocol.md](docs/event-protocol.md) | The binary event format TS sends to the Rust engine |
@@ -64,7 +64,7 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 
 ```text
 strobe/
-  engine/                  # Rust audio core (cpal, fundsp, symphonia, ssstretch)
+  engine/                  # Rust audio core (cpal, fundsp, symphonia, rubato; built-in WSOLA stretch)
     src/
       audio_io.rs scheduler.rs voice_alloc.rs   # the engine spine
       graph.rs stats.rs error.rs lib.rs
@@ -95,14 +95,15 @@ Early development. Building from a working spine outward:
 - ✅ **Phase 1 — synthesis core**: a real instrument layer — band-limited oscillators (sine/saw/square/tri/noise/wavetable), a resonant state-variable filter (LP/HP/BP/notch), amp + filter ADSR envelopes, a configurable subtractive **synth voice**, a synthesized **drum kit** (bd/sn/cp/hh/oh with hat choke), **polyphony** with oldest/quietest voice-stealing (16+ voices), and a transparent master **look-ahead limiter**. → [`examples/phase1-kit.ts`](examples/phase1-kit.ts) (`pnpm demo:phase1`)
 - ✅ **Phase 2 — pattern language**: the declarative language above is now real — `Pat<T>` (a pure function of time), the **mini-notation** parser (`"bd(3,8)"`, `~`, `*` `/`, `[]`, `<>`, `,`, `!`, `?`), the full **combinator** vocabulary (`fast`/`rev`/`every`/`iter`/`jux`/`off`/`degrade`/…, as functions and chainable methods), the **`sound()`/`note()`/`freq()`** API with chained modifiers, **continuous signals** (`sine`/`saw`/`rand`/… `.range().slow()`), the scheduler that compiles each `Hap<ControlMap>` into the 32-byte protocol, and **named tracks** with seamless cycle-boundary hot-swap + mute/solo/hush. → [`examples/phase2-song.ts`](examples/phase2-song.ts) (`pnpm demo:phase2`)
 - ✅ **Phase 3 — effects rack**: per-track **effect chains** + global **send buses**, all pre-allocated and driven by smoothed params (no audio-thread allocation). A sweepable **performance filter** + 3-band **EQ**, **delay** & algorithmic **reverb** sends, **distortion** & **bitcrush**, **chorus/flanger/phaser**, a **compressor**, and the headline techno **sidechain pump** — plus audio-rate **parameter automation** so a signal can smoothly sweep any effect param. → [`examples/phase3-techno.ts`](examples/phase3-techno.ts) (`pnpm demo:phase3`)
-- ⬜ Phases 4–6: sampling → live-coding DX → web backend.
+- ✅ **Phase 4 — sampling**: load audio (WAV/MP3/FLAC/OGG via **symphonia**, resampled with **rubato**) into a lock-free, RT-safe **sample bank**; a polyphonic **sampler voice** (fractional read + cubic interp, speed/gain/region/loop/reverse); **chop**/**slice**/**reverse**/**loop** as pure pattern transforms over one `TrigSample` opcode; decoupled **time-stretch** & **pitch-shift** (a built-in WSOLA, offline); an engine-side **granular** voice (fixed grain pool, no audio-thread allocation); and **opt-in YouTube ingest** (`yt-dlp`+`ffmpeg`, disk-cached, gated). → [`examples/phase4-sampler.ts`](examples/phase4-sampler.ts) (`pnpm demo:phase4`)
+- ⬜ Phases 5–6: live-coding DX → web backend.
 
 > The README quickstart above now runs **fully** as written (`pnpm demo:phase3`): the filter sweep, `.room`/`.delay` sends, and the `.sidechain("p1")` pump are all audible.
 
-Engine: 112 Rust tests; library: 104 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+Engine: 139 Rust tests; library: 140 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 
-[cpal](https://github.com/RustAudio/cpal) (cross-platform audio I/O) · [fundsp](https://github.com/SamiPerttu/fundsp) (functional DSP) · [symphonia](https://github.com/pdeljanov/Symphonia) (audio decoding) · [ssstretch](https://github.com/bmisiak/ssstretch) / [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/) (time-stretch & pitch-shift) · [napi-rs](https://napi.rs/) (Rust ↔ Node) · [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen) (web target).
+[cpal](https://github.com/RustAudio/cpal) (cross-platform audio I/O) · [fundsp](https://github.com/SamiPerttu/fundsp) (functional DSP) · [symphonia](https://github.com/pdeljanov/Symphonia) (audio decoding) · [rubato](https://github.com/HEnquist/rubato) (sample-rate conversion) · a built-in WSOLA time-stretch / pitch-shift · [napi-rs](https://napi.rs/) (Rust ↔ Node) · [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen) (web target) · optional [yt-dlp](https://github.com/yt-dlp/yt-dlp) + [ffmpeg](https://ffmpeg.org) for YouTube ingest.
 
 Pattern model inspired by [TidalCycles](https://tidalcycles.org/) and [Strudel](https://strudel.cc/).
