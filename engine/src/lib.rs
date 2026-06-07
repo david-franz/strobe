@@ -12,6 +12,7 @@ pub mod dsp;
 pub mod error;
 pub mod graph;
 pub mod protocol;
+pub mod sample;
 pub mod scheduler;
 pub mod stats;
 #[cfg(test)]
@@ -28,6 +29,7 @@ use dsp::filter::{SvfConfig, SvfMode};
 use error::AudioError;
 use graph::InstrumentConfig;
 use protocol::ring::{ring, RingConsumer, RingProducer};
+use sample::{decode, DecodedPcm, SampleBank};
 use stats::{EngineStats, EngineStatsShared};
 use voice_alloc::{InstrumentDef, VoicePool, SLOTS_PER_INSTRUMENT};
 use voices::drum::DrumConfig;
@@ -68,6 +70,9 @@ pub struct Engine {
     consumer: Option<RingConsumer>,
     registry: Vec<(u32, InstrumentDef, u8)>,
     cfg: Option<AudioConfig>,
+    /// Shared with the audio thread (feature 02): the control thread inserts decoded buffers,
+    /// the audio thread looks them up wait-free.
+    sample_bank: Arc<SampleBank>,
 }
 
 impl Default for Engine {
@@ -89,7 +94,45 @@ impl Engine {
             consumer: Some(consumer),
             registry: builtin_instruments(),
             cfg: None,
+            sample_bank: Arc::new(SampleBank::new()),
         }
+    }
+
+    /// The engine's running sample rate (after `start`); 48 kHz default before then.
+    fn engine_rate(&self) -> u32 {
+        self.cfg.map(|c| c.sample_rate).unwrap_or(48_000)
+    }
+
+    /// Load already-decoded interleaved PCM into the sample bank, resampling to the engine rate.
+    /// NON-REAL-TIME (control thread). Returns the sample id.
+    pub fn load_sample_pcm(
+        &self,
+        samples: Vec<f32>,
+        channels: u16,
+        src_rate: u32,
+    ) -> Result<u32, EngineError> {
+        let pcm = DecodedPcm { samples, channels, sample_rate: src_rate };
+        let buf = decode::prepare(pcm, self.engine_rate()).map_err(|e| EngineError::Sample(e.to_string()))?;
+        Ok(self.sample_bank.insert(Arc::new(buf)))
+    }
+
+    /// Decode a local audio file (WAV/MP3/FLAC/OGG/…) and load it. NON-REAL-TIME. Returns the id.
+    pub fn load_sample_file(&self, path: &str) -> Result<u32, EngineError> {
+        let bytes = std::fs::read(path).map_err(|e| EngineError::Sample(format!("read {path}: {e}")))?;
+        let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str());
+        let pcm = decode::decode_bytes(bytes, ext).map_err(|e| EngineError::Sample(e.to_string()))?;
+        let buf = decode::prepare(pcm, self.engine_rate()).map_err(|e| EngineError::Sample(e.to_string()))?;
+        Ok(self.sample_bank.insert(Arc::new(buf)))
+    }
+
+    /// Number of loaded samples (telemetry/tests).
+    pub fn sample_count(&self) -> usize {
+        self.sample_bank.len()
+    }
+
+    /// `(channels, frames, sample_rate)` for a loaded sample, or `None` if the id is unknown.
+    pub fn sample_info(&self, id: u32) -> Option<(u16, usize, u32)> {
+        self.sample_bank.lookup(id).map(|b| (b.channels, b.frames, b.sample_rate))
     }
 
     /// Register an extra instrument (before `start`); returns its id. Dynamic definition
@@ -156,12 +199,15 @@ impl Engine {
 #[derive(Debug, PartialEq)]
 pub enum EngineError {
     BadLength,
+    /// Sample load/decode failure (friendly message).
+    Sample(String),
 }
 
 impl std::fmt::Display for EngineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EngineError::BadLength => write!(f, "event buffer length is not a multiple of 32"),
+            EngineError::Sample(m) => write!(f, "{m}"),
         }
     }
 }
@@ -194,6 +240,19 @@ mod tests {
         let recs = [EventRecord::note_on(1, 100, 1, 220.0, 0.9, 0.0, 5.0, 0)];
         e.push_events(bytemuck::cast_slice(&recs)).expect("push ok");
         assert!(e.stats().ring_fullness > 0.0);
+    }
+
+    #[test]
+    fn load_sample_pcm_returns_usable_id() {
+        let e = Engine::new();
+        let id = e.load_sample_pcm(vec![0.1f32; 9600], 2, 48_000).expect("load"); // 0.1s stereo
+        assert_eq!(id, 0);
+        let buf = e.sample_bank.lookup(id).expect("present");
+        assert_eq!(buf.channels, 2);
+        assert_eq!(buf.frames, 4800);
+        let id2 = e.load_sample_pcm(vec![0.0f32; 100], 1, 48_000).expect("load");
+        assert_eq!(id2, 1);
+        assert_eq!(e.sample_count(), 2);
     }
 
     #[test]

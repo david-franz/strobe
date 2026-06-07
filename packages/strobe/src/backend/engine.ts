@@ -4,7 +4,9 @@
 // or (later) WASM/AudioWorklet — moving to the browser swaps `createNativeEngine`
 // for `createWebEngine` and changes no song code (architecture.md "The bridge").
 
-import { Engine as NativeEngine } from "@strobe/native";
+import { Engine as NativeEngine, type LoadedSample } from "@strobe/native";
+
+export type { LoadedSample };
 
 export interface EngineStats {
   /** Engine frame counter — the source of truth for timing. */
@@ -21,6 +23,10 @@ export interface Engine {
   /** Hot path; non-blocking; one call per scheduler tick. */
   pushEvents(buffer: ArrayBuffer): void;
   stats(): EngineStats;
+  /** Non-real-time: decode + load a local audio file; returns the sample id + metadata. */
+  loadSampleFile(path: string): LoadedSample;
+  /** Non-real-time: load already-decoded interleaved PCM; returns the sample id + metadata. */
+  loadSamplePcm(pcm: Float32Array, channels: number, sampleRate: number): LoadedSample;
 }
 
 /** Native backend: a thin wrapper over the napi addon. */
@@ -39,5 +45,7 @@ export function createNativeEngine(): Engine {
       e.pushEvents(Buffer.from(buf));
     },
     stats: () => e.stats(),
+    loadSampleFile: (path) => e.loadSampleFile(path),
+    loadSamplePcm: (pcm, channels, sampleRate) => e.loadSamplePcm(pcm, channels, sampleRate),
   };
 }

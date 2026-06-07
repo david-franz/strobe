@@ -10,6 +10,7 @@ import { createNativeEngine } from "../backend/engine";
 import { Clock } from "../clock/clock";
 import { Scheduler } from "./scheduler";
 import { setActiveClock } from "../clock/singleton";
+import { setActiveSampleEngine } from "../sample/load";
 import { beginReload, endReload, abortReload } from "./tracks";
 
 export interface PlayOpts {
@@ -51,6 +52,7 @@ export async function play(songPath: string, opts: PlayOpts = {}): Promise<Runni
   const clock = new Clock(engine);
   clock.anchor(sampleRate);
   setActiveClock(clock); // the song's setcps()/p1() mutate the library singletons
+  setActiveSampleEngine(engine); // the song's sample(...) loads into this engine
 
   const scheduler = new Scheduler(engine, clock);
   scheduler.start();
@@ -83,6 +85,7 @@ export async function play(songPath: string, opts: PlayOpts = {}): Promise<Runni
       clearInterval(statsTimer);
       watcher.close();
       scheduler.stop();
+      setActiveSampleEngine(null);
       await engine.stop();
     },
   };

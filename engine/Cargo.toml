@@ -7,3 +7,6 @@ edition = "2021"
 cpal = "0.15"
 bytemuck = { version = "1", features = ["derive"] }
 fundsp = "0.18"
+symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "isomp4", "ogg", "vorbis", "wav", "pcm"] }
+rubato = "0.15"
+arc-swap = "1"

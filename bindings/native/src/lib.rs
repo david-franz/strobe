@@ -54,6 +54,37 @@ impl Engine {
             .map_err(|e| Error::from_reason(e.to_string()))
     }
 
+    /// Load already-decoded interleaved PCM into the sample bank (non-real-time). Used by the TS
+    /// decode-on-disk path and YouTube ingest.
+    #[napi]
+    pub fn load_sample_pcm(&self, pcm: Float32Array, channels: u32, sample_rate: u32) -> Result<LoadedSample> {
+        let id = self
+            .inner
+            .load_sample_pcm(pcm.as_ref().to_vec(), channels as u16, sample_rate)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(self.loaded(id))
+    }
+
+    /// Decode a local audio file (WAV/MP3/FLAC/OGG/…) and load it (non-real-time).
+    #[napi]
+    pub fn load_sample_file(&self, path: String) -> Result<LoadedSample> {
+        let id = self
+            .inner
+            .load_sample_file(&path)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(self.loaded(id))
+    }
+
+    fn loaded(&self, id: u32) -> LoadedSample {
+        let (channels, frames, sample_rate) = self.inner.sample_info(id).unwrap_or((0, 0, 0));
+        LoadedSample {
+            id: id as f64,
+            channels: channels as f64,
+            frames: frames as f64,
+            sample_rate: sample_rate as f64,
+        }
+    }
+
     #[napi]
     pub fn stats(&self) -> Stats {
         let s = self.inner.stats();
@@ -71,6 +102,14 @@ impl Engine {
 pub struct StartOpts {
     pub sample_rate: Option<f64>,
     pub buffer_frames: Option<f64>,
+}
+
+#[napi(object)]
+pub struct LoadedSample {
+    pub id: f64,
+    pub channels: f64,
+    pub frames: f64,
+    pub sample_rate: f64,
 }
 
 #[napi(object)]
