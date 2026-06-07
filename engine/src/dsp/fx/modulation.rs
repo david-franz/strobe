@@ -42,7 +42,9 @@ fn read_frac(buf: &[f32], write: usize, delay_samples: f32) -> f32 {
     let n = buf.len();
     let d = delay_samples.clamp(1.0, (n - 2) as f32);
     let rp = (write as f32 - d).rem_euclid(n as f32);
-    let i0 = rp.floor() as usize;
+    // `% n` guards the f32 edge where `rem_euclid` rounds up to exactly `n` (a tiny negative
+    // `write - d`), which would otherwise floor to `n` and index out of bounds.
+    let i0 = (rp.floor() as usize) % n;
     let i1 = (i0 + 1) % n;
     let f = rp - rp.floor();
     buf[i0] * (1.0 - f) + buf[i1] * f
@@ -317,6 +319,24 @@ mod tests {
 
     fn tone(freq: f32, n: usize) -> Vec<f32> {
         (0..n).map(|i| 0.5 * (2.0 * std::f32::consts::PI * freq * i as f32 / SR).sin()).collect()
+    }
+
+    #[test]
+    fn read_frac_handles_the_rem_euclid_rounding_edge() {
+        // A tiny negative `write - d` makes f32 `rem_euclid(n)` round up to exactly `n`, which
+        // floored to `n` and indexed out of bounds (the audio-thread panic). It must not now.
+        let n = 962usize; // the flanger's buffer length, where this was hit
+        let buf = vec![0.25f32; n];
+        let write = 5usize;
+        let d = f32::from_bits((5.0f32).to_bits() + 1); // smallest f32 > 5.0 → write - d ≈ -5e-7
+        let y = read_frac(&buf, write, d);
+        assert!(y.is_finite());
+        // and a broad sweep never panics.
+        for w in 0..n {
+            for k in 0..64 {
+                assert!(read_frac(&buf, w, 1.0 + k as f32 * 7.3).is_finite());
+            }
+        }
     }
 
     #[test]
