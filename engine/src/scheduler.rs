@@ -39,6 +39,21 @@ fn apply(
                 pool.trigger_sample(track, buf, speed, gain, start, TrigOpts::from_flags(flags, region_len), off);
             }
         }
+        Decoded::TrigGrain {
+            track,
+            sample_id,
+            center,
+            gain,
+            size_secs,
+            density,
+            scatter,
+            spread,
+            duration_secs,
+        } => {
+            if let Some(buf) = bank.lookup(sample_id) {
+                pool.trigger_grain(track, buf, center, gain, size_secs, density, scatter, spread, duration_secs, off);
+            }
+        }
         Decoded::NoteOff { voice } => pool.note_off(voice),
         Decoded::ParamSet { track, param, value } => {
             if track == 0 {
@@ -137,8 +152,9 @@ pub fn dispatch_and_render(
             break;
         }
     }
-    // Sampler voices render the whole block (each applies its own sub-buffer offset).
+    // Sampler + granular voices render the whole block (each applies its own sub-buffer offset).
     pool.render_samplers(tracks_l, tracks_r, frames);
+    pool.render_granulars(tracks_l, tracks_r, frames);
     pool.reap();
 }
 
@@ -246,6 +262,42 @@ mod tests {
         let mut tr = per_track(SR as usize);
         dispatch_and_render(&mut c, base + 256, SR as u64, &mut pool, &mut bus, &mut chains, &bank, &st, &mut tl, &mut tr);
         assert_eq!(pool.active_count(), 0, "held voice released by NoteOff then freed");
+    }
+
+    #[test]
+    fn trig_grain_starts_a_cloud_through_render() {
+        use crate::sample::bank::SampleBuffer;
+        use crate::voices::granular::GranularVoice;
+        let _ = GranularVoice::new(); // touch the type
+        let (p, mut c, mut pool, st) = setup(InstrumentDef::Drum(DrumConfig::kick()));
+        let bank = SampleBank::new();
+        let id = bank.insert(Arc::new(SampleBuffer {
+            channels: 1,
+            sample_rate: 48_000,
+            frames: 48_000,
+            data: vec![1.0f32; 48_000].into_boxed_slice(),
+        }));
+        // TrigGrain (0x21): vp=sample_id, arg0=center, arg1=gain, arg2=size_secs, arg3=density,
+        // flags_seq = scatter(0xFF=1.0) | spread(0<<8) | duration_ms(100<<16).
+        p.try_push(EventRecord {
+            version: 1,
+            opcode: 0x21,
+            track: 1,
+            frame: 0,
+            vp: id,
+            arg0: 0.0,
+            arg1: 1.0,
+            arg2: 0.02,
+            arg3: 40.0,
+            flags_seq: (100u32 << 16) | 0xFF,
+        });
+        let mut bus = crate::dsp::effects::MasterBus::new(SR);
+        let mut chains = empty_chains();
+        let mut tl = per_track(1024);
+        let mut tr = per_track(1024);
+        dispatch_and_render(&mut c, 0, 1024, &mut pool, &mut bus, &mut chains, &bank, &st, &mut tl, &mut tr);
+        assert_eq!(pool.active_granular_count(), 1, "grain cloud started");
+        assert!(tl[1].iter().any(|&x| x.abs() > 1e-4), "cloud produced audio on track 1");
     }
 
     #[test]

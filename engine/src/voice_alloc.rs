@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::graph::InstrumentConfig;
 use crate::sample::bank::SampleBuffer;
 use crate::voices::drum::{DrumConfig, DrumVoice};
+use crate::voices::granular::GranularVoice;
 use crate::voices::oscillator::WavetableBank;
 use crate::voices::sampler::{SamplerVoice, TrigOpts};
 use crate::voices::synth::SynthVoice;
@@ -18,10 +19,20 @@ use crate::voices::{ParamId, Voice};
 pub const SLOTS_PER_INSTRUMENT: usize = 24;
 /// Pre-built sampler voices shared across all tracks (Phase 4).
 pub const SAMPLER_VOICES: usize = 24;
+/// Pre-built granular voices shared across all tracks (Phase 4). Fewer — each owns a grain pool
+/// and is heavier; a granular cloud is rarely needed on many tracks at once.
+pub const GRANULAR_VOICES: usize = 6;
 
 /// A pre-allocated sampler-voice slot (Phase 4). Triggered by `TrigSample`, not `NoteOn`.
 struct SamplerSlot {
     voice: SamplerVoice,
+    track: u16,
+    started: u64,
+}
+
+/// A pre-allocated granular-voice slot (Phase 4). Triggered by `TrigGrain`.
+struct GranularSlot {
+    voice: GranularVoice,
     track: u16,
     started: u64,
 }
@@ -62,6 +73,7 @@ struct Slot {
 pub struct VoicePool {
     slots: Vec<Slot>,
     samplers: Vec<SamplerSlot>,
+    granulars: Vec<GranularSlot>,
     frame: u64,
 }
 
@@ -86,7 +98,10 @@ impl VoicePool {
         }
         let samplers =
             (0..SAMPLER_VOICES).map(|_| SamplerSlot { voice: SamplerVoice::new(), track: 0, started: 0 }).collect();
-        Self { slots, samplers, frame: 0 }
+        let granulars = (0..GRANULAR_VOICES)
+            .map(|_| GranularSlot { voice: GranularVoice::new(), track: 0, started: 0 })
+            .collect();
+        Self { slots, samplers, granulars, frame: 0 }
     }
 
     pub fn active_count(&self) -> usize {
@@ -277,6 +292,67 @@ impl VoicePool {
         self.samplers.iter().filter(|s| s.voice.is_active()).count()
     }
 
+    /// Start a granular cloud on `track` (Phase 4). Allocates a free granular voice, stealing the
+    /// oldest if all are busy, at sub-buffer `offset`. Arithmetic + `Arc::clone` only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn trigger_grain(
+        &mut self,
+        track: u16,
+        buf: Arc<SampleBuffer>,
+        center: f32,
+        gain: f32,
+        size_secs: f32,
+        density: f32,
+        scatter: f32,
+        spread: f32,
+        duration_secs: f32,
+        offset: usize,
+    ) {
+        if self.granulars.is_empty() {
+            return;
+        }
+        let idx = self.granulars.iter().position(|s| !s.voice.is_active()).unwrap_or_else(|| {
+            self.granulars
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, s)| s.started)
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        });
+        self.frame += 1;
+        let frame = self.frame;
+        let s = &mut self.granulars[idx];
+        s.track = track;
+        s.started = frame;
+        s.voice
+            .trigger_at(offset, buf, center, gain, size_secs, density, scatter, spread, duration_secs);
+    }
+
+    /// Render every active granular voice into its track's buffer over the full block. Call once
+    /// per buffer (after the samplers).
+    pub fn render_granulars(
+        &mut self,
+        tracks_l: &mut [Vec<f32>],
+        tracks_r: &mut [Vec<f32>],
+        frames: usize,
+    ) {
+        if tracks_l.is_empty() {
+            return;
+        }
+        let last = tracks_l.len() - 1;
+        for s in self.granulars.iter_mut() {
+            if s.voice.is_active() {
+                let t = (s.track as usize).min(last);
+                s.voice.render(&mut tracks_l[t][..frames], &mut tracks_r[t][..frames]);
+            }
+        }
+    }
+
+    /// Active granular voices (telemetry/tests).
+    pub fn active_granular_count(&self) -> usize {
+        self.granulars.iter().filter(|s| s.voice.is_active()).count()
+    }
+
     /// Reclaim finished voices and refresh levels for stealing decisions. Once per buffer.
     pub fn reap(&mut self) {
         for s in self.slots.iter_mut() {
@@ -337,7 +413,7 @@ mod tests {
                 last_level: 0.0,
             })
             .collect();
-        VoicePool { slots, samplers: Vec::new(), frame: 0 }
+        VoicePool { slots, samplers: Vec::new(), granulars: Vec::new(), frame: 0 }
     }
 
     /// A pool with `n` voices of instrument 0 (choke 0).

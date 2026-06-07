@@ -38,10 +38,24 @@ export interface ControlMap {
   // ── Sampler (Phase 4) ──
   sampleId?: number; // engine sample id → emit a TrigSample instead of a NoteOn
   begin?: number | Pat<number>; // region start as a 0..1 fraction of the sample
+  end?: number | Pat<number>; // region end as a 0..1 fraction (chop/slice set this)
+  rev?: boolean; // play the region backwards (sampler reverse flag)
+  loop?: boolean; // loop the region instead of one-shot (held beds, stutters)
+  interp?: "linear" | "cubic"; // sampler interpolation quality (default cubic)
+  grain?: GrainOpts; // granular cloud → emit a TrigGrain instead of a TrigSample
   _frames?: number; // sample length (frames at engine rate), for begin/chop → start frames
-  _regionLen?: number; // region length in frames (chop/slice); 0 = to end
-  _flags?: number; // TrigSample flags (reverse/loop/interp)
-  [k: string]: number | string | Pat<number> | undefined;
+  _regionLen?: number; // region length in frames (escape hatch); 0 = to end
+  _flags?: number; // raw TrigSample flags (escape hatch; rev/loop/interp set them normally)
+  [k: string]: number | string | boolean | GrainOpts | Pat<number> | undefined;
+}
+
+/** Granular cloud parameters (`.grain(...)`). Sizes are musician-facing units the scheduler
+ *  converts at compile time. */
+export interface GrainOpts {
+  size: number; // grain length in milliseconds (e.g. 60)
+  density: number; // grains per second (overlap ≈ size/1000 × density)
+  scatter?: number; // 0..1 random jitter of each grain's read position
+  spread?: number; // 0..1 stereo pan scatter
 }
 
 export type Routing =

@@ -3,6 +3,7 @@
 //! polyphonic voice allocation.
 
 pub mod drum;
+pub mod granular;
 pub mod oscillator;
 pub mod sampler;
 pub mod synth;

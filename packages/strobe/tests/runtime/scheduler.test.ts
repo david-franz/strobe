@@ -6,7 +6,8 @@ import { Scheduler, writeNoteOn, writeTempo } from "../../src/runtime/scheduler"
 import { setTrack } from "../../src/runtime/tracks";
 import { sound, note } from "../../src/pattern/sound";
 import { sine } from "../../src/pattern/signals";
-import { packFx } from "../../src/pattern/control";
+import { packFx, type ControlMap } from "../../src/pattern/control";
+import "../../src/sample/edit"; // installs .chop/.slice/.rev/.grain
 
 function fakeEngine() {
   let currentFrame = 0;
@@ -185,6 +186,7 @@ function records(pushed: ArrayBuffer[]) {
     arg2: number;
     arg3: number;
     frame: number;
+    flags: number;
   }[] = [];
   for (const b of pushed) {
     const v = new DataView(b);
@@ -198,6 +200,7 @@ function records(pushed: ArrayBuffer[]) {
         arg2: v.getFloat32(o + 20, true),
         arg3: v.getFloat32(o + 24, true),
         frame: v.getUint32(o + 4, true),
+        flags: v.getUint32(o + 28, true),
       });
     }
   }
@@ -259,6 +262,43 @@ describe("Hap → events compiler", () => {
     expect(ts.arg1).toBeCloseTo(0.8, 6); // gain
     expect(ts.arg2).toBeCloseTo(24000, 0); // start = begin 0.5 × 48000 frames
     expect(recs.some((r) => r.op === 0x01)).toBe(false); // no NoteOn for a sample
+  });
+
+  it("chop(4) compiles to 4 TrigSamples with shared-boundary start/region frames", () => {
+    const recs = tickOnce(pure<ControlMap>({ sampleId: 7, _frames: 8000 }).chop(4).query)
+      .filter((r) => r.op === 0x20)
+      .sort((a, b) => a.arg2 - b.arg2);
+    expect(recs.length).toBe(4);
+    recs.forEach((r, k) => {
+      expect(r.arg3).toBe(7); // sample id
+      expect(r.arg2).toBeCloseTo(k * 2000, 0); // start = k/4 × 8000
+      expect(r.vp).toBe(2000); // region length = 1/4 × 8000
+    });
+    // adjacent slices reconstruct exactly: slice k ends where slice k+1 starts
+    for (let k = 0; k < 3; k++) expect(recs[k].arg2 + recs[k].vp).toBeCloseTo(recs[k + 1].arg2, 0);
+  });
+
+  it(".rev() on a chopped sample sets the reverse flag bit on each TrigSample", () => {
+    const recs = tickOnce(pure<ControlMap>({ sampleId: 1, _frames: 8000 }).chop(4).rev().query).filter(
+      (r) => r.op === 0x20,
+    );
+    expect(recs.length).toBe(4);
+    expect(recs.every((r) => (r.flags & 0x1) === 0x1)).toBe(true); // FLAG_REVERSE
+  });
+
+  it(".grain(...) compiles to a TrigGrain (0x21) with packed scatter/spread/duration", () => {
+    const pat = pure<ControlMap>({ sampleId: 3, _frames: 8000 }).grain({
+      size: 50,
+      density: 20,
+      scatter: 0.5,
+    });
+    const g = tickOnce(pat.query).find((r) => r.op === 0x21)!;
+    expect(g).toBeTruthy();
+    expect(g.vp).toBe(3); // sample id
+    expect(g.arg2).toBeCloseTo(0.05, 6); // grain size 50 ms → seconds
+    expect(g.arg3).toBeCloseTo(20, 6); // density grains/sec
+    expect(g.flags & 0xff).toBe(Math.round(0.5 * 255)); // scatter packed in the low byte
+    expect((g.flags >>> 16) & 0xffff).toBe(1000); // one full cycle at cps=1 → 1000 ms
   });
 
   it("a constant track-fx param is sent once per cycle, but notes are never deduped", () => {

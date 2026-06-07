@@ -19,6 +19,7 @@ pub mod op {
     pub const PARAM_SET: u8 = 0x10;
     pub const PARAM_RAMP: u8 = 0x11;
     pub const TRIG_SAMPLE: u8 = 0x20;
+    pub const TRIG_GRAIN: u8 = 0x21;
     pub const TRACK_FX: u8 = 0x30;
     pub const TEMPO: u8 = 0x40;
     pub const NOP: u8 = 0x7F;
@@ -141,6 +142,20 @@ pub enum Decoded {
         region_len: u32,
         flags: u32,
     },
+    /// Start a granular cloud (Phase 4, feature 04). Rate-independent params: `center` is a 0..1
+    /// read-position fraction, `size_secs` the grain length, `density` grains/sec, `duration_secs`
+    /// how long the cloud spawns. `scatter`/`spread` are 0..1 (packed from the record's low bytes).
+    TrigGrain {
+        track: u16,
+        sample_id: u32,
+        center: f32,
+        gain: f32,
+        size_secs: f32,
+        density: f32,
+        scatter: f32,
+        spread: f32,
+        duration_secs: f32,
+    },
     Tempo {
         cps: f32,
     },
@@ -189,6 +204,18 @@ pub fn decode(r: &EventRecord) -> Result<Decoded, ()> {
             start: r.arg2,
             region_len: r.vp,
             flags: r.flags_seq,
+        },
+        op::TRIG_GRAIN => Decoded::TrigGrain {
+            track: r.track,
+            sample_id: r.vp,
+            center: r.arg0,
+            gain: r.arg1,
+            size_secs: r.arg2,
+            density: r.arg3,
+            // flags_seq packs scatter (low byte) | spread (next byte) | duration_ms (high 16).
+            scatter: (r.flags_seq & 0xFF) as f32 / 255.0,
+            spread: ((r.flags_seq >> 8) & 0xFF) as f32 / 255.0,
+            duration_secs: ((r.flags_seq >> 16) & 0xFFFF) as f32 / 1000.0,
         },
         op::TEMPO => Decoded::Tempo { cps: r.arg0 },
         op::NOP => Decoded::Nop,

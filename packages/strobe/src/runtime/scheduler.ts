@@ -7,7 +7,7 @@
 import type { Engine } from "../backend/engine";
 import type { Clock } from "../clock/clock";
 import { activeTracks, promotePending } from "./tracks";
-import { queryArc, hasOnset, type Hap, type Pattern } from "../pattern/pattern";
+import { Pat, queryArc, hasOnset, type Hap, type Pattern } from "../pattern/pattern";
 import { noteToFreq, packFx, PARAM_REGISTRY, PARAM_RAMP_KEYS, type ControlMap } from "../pattern/control";
 import { isContinuousPattern } from "../pattern/signals";
 import { PRESETS } from "../instruments/presets";
@@ -23,7 +23,13 @@ const OP_NOTE_OFF = 0x02;
 const OP_PARAM_SET = 0x10;
 const OP_PARAM_RAMP = 0x11;
 const OP_TRIG_SAMPLE = 0x20;
+const OP_TRIG_GRAIN = 0x21;
 const OP_TRACK_FX = 0x30;
+
+// TrigSample flag bits (mirror engine/src/voices/sampler.rs).
+const FLAG_REVERSE = 1 << 0;
+const FLAG_LOOP = 1 << 1;
+const FLAG_LINEAR = 1 << 2;
 const OP_TEMPO = 0x40;
 
 export interface SchedulerOpts {
@@ -168,6 +174,48 @@ const trigSample = (
   encode: (v, i) => writeTrigSample(v, i, track, frame, sampleId, speed, gain, startFrames, regionLen, flags),
 });
 
+/** TrigGrain (0x21): start a granular cloud. vp=sample id, arg0=center fraction (0..1),
+ *  arg1=gain, arg2=grain size (seconds), arg3=density (grains/sec). `packed` (flags_seq) holds
+ *  scatter (low byte ×255) | spread (next byte ×255) | duration ms (high 16 bits). */
+function writeTrigGrain(
+  view: DataView,
+  i: number,
+  track: number,
+  frame: number,
+  sampleId: number,
+  center: number,
+  gain: number,
+  sizeSecs: number,
+  density: number,
+  packed: number,
+): void {
+  const o = i * REC;
+  view.setUint8(o + 0, VERSION);
+  view.setUint8(o + 1, OP_TRIG_GRAIN);
+  view.setUint16(o + 2, track, true);
+  view.setUint32(o + 4, frame >>> 0, true);
+  view.setUint32(o + 8, sampleId >>> 0, true);
+  view.setFloat32(o + 12, center, true);
+  view.setFloat32(o + 16, gain, true);
+  view.setFloat32(o + 20, sizeSecs, true);
+  view.setFloat32(o + 24, density, true);
+  view.setUint32(o + 28, packed >>> 0, true);
+}
+
+const trigGrain = (
+  track: number,
+  frame: number,
+  sampleId: number,
+  center: number,
+  gain: number,
+  sizeSecs: number,
+  density: number,
+  packed: number,
+): RawEvent => ({
+  frame,
+  encode: (v, i) => writeTrigGrain(v, i, track, frame, sampleId, center, gain, sizeSecs, density, packed),
+});
+
 // ── The Hap → events compiler ────────────────────────────────────────────────
 
 const HANDLED = new Set(["s", "note", "freq", "gain", "vel", "instrument"]);
@@ -232,14 +280,36 @@ export class Scheduler {
     const onsetFrame = this.clock.cycleToFrame(hap.part.begin);
     const durFrames = hap.whole ? this.clock.cyclesToFrames(hap.whole.end - hap.whole.begin) : 0;
 
-    if (cm.sampleId != null) {
-      // A loaded sample → TrigSample (a one-shot voice, like a drum). begin is a 0..1 fraction.
+    if (cm.sampleId != null && cm.grain != null) {
+      // A granular cloud → TrigGrain. The cloud sustains for the hap's duration; sizes are
+      // converted to rate-independent units the engine resolves against the buffer.
+      const g = cm.grain;
+      const center = num(cm.begin ?? 0, hap.part.begin);
+      const gain = Math.min(4, Math.max(0, num(cm.gain ?? 1, hap.part.begin)));
+      const sizeSecs = Math.max(0.001, g.size / 1000);
+      const density = Math.max(0.1, g.density);
+      const durCycles = hap.whole ? hap.whole.end - hap.whole.begin : 0.25;
+      const durMs = Math.min(65535, Math.max(1, Math.round((durCycles / this.clock.cps) * 1000)));
+      const scatter8 = Math.min(255, Math.max(0, Math.round((g.scatter ?? 0) * 255)));
+      const spread8 = Math.min(255, Math.max(0, Math.round((g.spread ?? 0) * 255)));
+      const packed = (((durMs & 0xffff) << 16) | (spread8 << 8) | scatter8) >>> 0;
+      out.push(trigGrain(track, onsetFrame, cm.sampleId, center, gain, sizeSecs, density, packed));
+    } else if (cm.sampleId != null) {
+      // A loaded sample → TrigSample (a one-shot voice, like a drum). begin/end are 0..1 fractions;
+      // round both to frames so adjacent chop slices share an exact boundary (no gap/overlap).
       const speed = num(cm.speed ?? 1, hap.part.begin);
       const gain = Math.min(4, Math.max(0, num(cm.gain ?? 1, hap.part.begin)));
-      const startFrames = Math.round(num(cm.begin ?? 0, hap.part.begin) * (cm._frames ?? 0));
-      out.push(
-        trigSample(track, onsetFrame, cm.sampleId, speed, gain, startFrames, cm._regionLen ?? 0, cm._flags ?? 0),
-      );
+      const frames = cm._frames ?? 0;
+      const startFrames = Math.round(num(cm.begin ?? 0, hap.part.begin) * frames);
+      let regionLen = cm._regionLen ?? 0;
+      if (cm.end != null) {
+        regionLen = Math.max(0, Math.round(num(cm.end, hap.part.begin) * frames) - startFrames);
+      }
+      let flags = cm._flags ?? 0;
+      if (cm.rev) flags |= FLAG_REVERSE;
+      if (cm.loop) flags |= FLAG_LOOP;
+      if (cm.interp === "linear") flags |= FLAG_LINEAR;
+      out.push(trigSample(track, onsetFrame, cm.sampleId, speed, gain, startFrames, regionLen, flags));
     } else {
       const { id: instrument, drum } = resolveInstrument(cm);
       const velSrc = cm.gain ?? (cm as Record<string, unknown>).vel ?? 0.9;
@@ -257,6 +327,9 @@ export class Scheduler {
 
     for (const [key, value] of Object.entries(cm)) {
       if (HANDLED.has(key) || value == null) continue;
+      // Sampler flags / grain opts are consumed by the trig branch above, not routed as params.
+      if (typeof value === "boolean") continue;
+      if (typeof value === "object" && !(value instanceof Pat)) continue;
       const route = PARAM_REGISTRY[key];
       if (!route || route.kind === "noteField" || route.kind === "trigField") continue;
       if (typeof value === "string") {
