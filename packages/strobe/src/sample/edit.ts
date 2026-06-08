@@ -1,8 +1,9 @@
 // Sample editing methods (Phase 4, feature 04 + 03): the producer-facing edit layer added to
 // Pat<ControlMap> the same way sound.ts adds .gain/.lpf/etc. Two groups:
 //
-//   • Decoupled stretch/pitch (03): .stretch / .pitch — resolved OFFLINE (WSOLA) by preparing a
-//     variant buffer and remapping each hap onto it (see prepareVariant in load.ts).
+//   • Decoupled stretch/pitch (03): .stretch / .pitch / .fit — resolved OFFLINE (WSOLA) by preparing
+//     a variant buffer and remapping each hap onto it (see prepareVariant in load.ts). .fit(cycles)
+//     time-stretches a buffer to span exactly N cycles at the current tempo (loop-to-grid).
 //   • Chop / slice / loop / reverse / region + granular (04): pure pattern transforms that compute
 //     a (begin, end) region per hap and ride the existing TrigSample opcode — no new voice. The
 //     unifying idea: a slice is just a TrigSample with a start offset and a region length. Granular
@@ -15,6 +16,7 @@ import { Pat, pattern, queryArc, spanIntersect, type Hap, type TimeSpan } from "
 import type { ControlMap, GrainOpts } from "../pattern/control";
 import { parseMini } from "../pattern/mini";
 import { rev as revPat } from "../pattern/combinators";
+import { getActiveClock } from "../clock/singleton";
 import { prepareVariant } from "./load";
 
 declare module "../pattern/pattern" {
@@ -24,6 +26,10 @@ declare module "../pattern/pattern" {
     pitch(semitones: number): Pat<ControlMap>;
     /** Scale duration by `factor` at constant pitch (offline time-stretch). `2` = twice as long. */
     stretch(factor: number): Pat<ControlMap>;
+    /** Time-stretch the buffer to span exactly `cycles` cycles at the current tempo, so a loop
+     *  locks to the grid: `sample(brk).fit(1).chop(8)` fills one bar. Captures the tempo at call
+     *  time (re-run the line after a `setcps`). */
+    fit(cycles: number): Pat<ControlMap>;
     /** Region start as a 0..1 fraction of the buffer. */
     begin(frac: number): Pat<ControlMap>;
     /** Region end as a 0..1 fraction of the buffer. */
@@ -39,17 +45,24 @@ declare module "../pattern/pattern" {
   }
 }
 
-// ── Stretch / pitch (feature 03) ──────────────────────────────────────────────
+// ── Stretch / pitch / fit (feature 03) ────────────────────────────────────────
 
-/** Resolve a stretch/pitch edit: prepare a variant buffer for each distinct sample id in the
- *  pattern's first cycle, then remap haps onto those variants. Non-sample haps pass through. */
-function applyVariant(pat: Pat<ControlMap>, stretch: number, semitones: number): Pat<ControlMap> {
+/** Resolve a stretch/pitch edit: for each distinct sample id in the pattern's first cycle,
+ *  compute a `(stretch, semitones)` (a null skips that sample), prepare the variant buffer, then
+ *  remap haps onto it. Non-sample haps pass through. Variants are cached in load.ts. */
+function remapVariants(
+  pat: Pat<ControlMap>,
+  factorFor: (cm: ControlMap) => { stretch: number; semitones: number } | null,
+): Pat<ControlMap> {
   const remap = new Map<number, { id: number; frames: number }>();
   for (const h of queryArc(pat, 0, 1)) {
-    const sid = h.value.sampleId;
-    if (sid != null && !remap.has(sid)) {
-      const v = prepareVariant(sid, stretch, semitones);
-      remap.set(sid, { id: v.id, frames: v.frames });
+    const cm = h.value;
+    if (cm.sampleId != null && !remap.has(cm.sampleId)) {
+      const f = factorFor(cm);
+      if (f) {
+        const v = prepareVariant(cm.sampleId, f.stretch, f.semitones);
+        remap.set(cm.sampleId, { id: v.id, frames: v.frames });
+      }
     }
   }
   return pat.fmap((cm) => {
@@ -57,6 +70,18 @@ function applyVariant(pat: Pat<ControlMap>, stretch: number, semitones: number):
     const v = remap.get(cm.sampleId);
     return v ? { ...cm, sampleId: v.id, _frames: v.frames } : cm;
   });
+}
+
+/** Stretch each sample in `pat` so it spans exactly `cycles` cycles at the current tempo. */
+function applyFit(pat: Pat<ControlMap>, cycles: number): Pat<ControlMap> {
+  const clock = getActiveClock();
+  if (!clock) {
+    throw new Error("strobe: .fit() needs a running clock — call it inside a playing song (after setcps).");
+  }
+  const targetFrames = clock.cyclesToFrames(cycles); // frames in `cycles` cycles at the current cps
+  return remapVariants(pat, (cm) =>
+    cm._frames ? { stretch: targetFrames / cm._frames, semitones: 0 } : null,
+  );
 }
 
 // ── Chop / slice (feature 04) ─────────────────────────────────────────────────
@@ -117,10 +142,13 @@ export function installSampleEditMethods(): void {
   const proto = Pat.prototype;
 
   proto.pitch = function (this: Pat<ControlMap>, semitones: number) {
-    return applyVariant(this, 1, semitones);
+    return remapVariants(this, () => ({ stretch: 1, semitones }));
   };
   proto.stretch = function (this: Pat<ControlMap>, factor: number) {
-    return applyVariant(this, factor, 0);
+    return remapVariants(this, () => ({ stretch: factor, semitones: 0 }));
+  };
+  proto.fit = function (this: Pat<ControlMap>, cycles: number) {
+    return applyFit(this, cycles);
   };
   proto.begin = function (this: Pat<ControlMap>, frac: number) {
     return this.fmap((cm) => ({ ...cm, begin: frac }));

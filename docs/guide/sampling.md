@@ -81,6 +81,7 @@ These change time and pitch **independently** (offline WSOLA), unlike `.speed`:
 | --- | --- |
 | `.stretch(factor)` | change duration at **constant pitch** (`2` = twice as long / half speed) |
 | `.pitch(semitones)` | transpose at **constant duration** (`-5` = down a fourth, same length) |
+| `.fit(cycles)` | stretch the buffer to span exactly `cycles` cycles at the current tempo — **lock a loop to the grid** |
 
 ```ts
 p1( sample("amen").stretch(2) );          // half-time, same pitch
@@ -91,6 +92,26 @@ p1( sample("amen").stretch(2).chop(8) );  // stretch THEN chop — slices land o
 Each `.stretch`/`.pitch` prepares a new buffer in the engine once (cached per `(sample, factor,
 semitones)`), so live-coding reloads reuse it rather than re-running the stretch. Order matters:
 **stretch/pitch first, then chop/slice** so the slice boundaries land on the final timeline.
+
+### `.fit(cycles)` — lock a loop to the grid
+
+A grabbed clip has its own tempo, so playing it raw drifts against your kick. **`.fit(n)` does the
+tempo math for you:** it time-stretches the buffer so it spans exactly `n` cycles at the *current*
+tempo. Once the buffer length equals a whole number of cycles, `.chop`/`.slice` tile it perfectly
+and everything locks to the beat:
+
+```ts
+setbpm(140);
+const brk = await sample.fromYouTube("https://youtu.be/…", { start: 0, dur: 3 });
+p1( sound("bd*4") );
+p2( sample(brk).fit(1).chop(8) );   // the 3s grab is fit to one bar, then sliced onto the grid
+p3( sample(brk).fit(2).chop(16) );  // or stretch it across two bars for a slower feel
+```
+
+`.fit` reads the tempo at the moment you call it, so re-run the line after a `setcps`/`setbpm`. It
+captures the buffer length from the loaded sample, so call it **before** `.chop`/`.slice` (like
+`.stretch`). For a clip that's already an exact loop at your tempo, `.fit` is a no-op-ish unity
+stretch; its real job is rescuing an arbitrary grab that *isn't* a clean bar.
 
 ## Granular
 

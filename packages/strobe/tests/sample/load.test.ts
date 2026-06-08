@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { loadFile, loadPcm, sample, setActiveSampleEngine } from "../../src/sample/load";
 import { queryArc } from "../../src/pattern/pattern";
 import type { Engine } from "../../src/backend/engine";
-import "../../src/sample/edit"; // installs .pitch()/.stretch()
+import { Clock } from "../../src/clock/clock";
+import { setActiveClock } from "../../src/clock/singleton";
+import "../../src/sample/edit"; // installs .pitch()/.stretch()/.fit()
 
 function fakeEngine() {
   let fileCalls = 0;
@@ -98,6 +100,19 @@ describe("sample load", () => {
     const cm = queryArc(v, 0, 1)[0].value;
     expect(cm.sampleId).not.toBe(0);
     expect(cm._frames).toBe(1000); // stretch factor 1 → unchanged length
+  });
+
+  it(".fit(n) stretches a sample to span exactly n cycles at the current tempo", () => {
+    const { engine } = fakeEngine();
+    setActiveSampleEngine(engine);
+    const clock = new Clock(engine);
+    clock.cps = 1;
+    clock.anchor(48000); // one cycle = 48000 frames
+    setActiveClock(clock);
+    // sample() loads a 1000-frame buffer; fit(1) must stretch it to one cycle = 48000 frames.
+    const cm = queryArc(sample("/x/amen.wav").fit(1), 0, 1)[0].value;
+    expect(cm.sampleId).not.toBe(0); // remapped to the fitted variant
+    expect(cm._frames).toBe(48000); // 1000 × (48000 / 1000)
   });
 
   it("a stretch edit prepares once per distinct id (cached across reloads)", () => {

@@ -12,6 +12,12 @@ export function setActiveClock(clock: Clock): void {
   active = clock;
 }
 
+/** The live clock, if one is active. For build-time helpers like `.fit()` that need the current
+ *  tempo to convert cycles ↔ frames. */
+export function getActiveClock(): Clock | null {
+  return active;
+}
+
 /** Set tempo directly (cycles per second). No-op before a clock is active. */
 export function setcps(x: number): void {
   active?.setcps(x);
