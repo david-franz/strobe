@@ -90,6 +90,12 @@ describe("youtube ingest (opt-in, injection-safe)", () => {
     expect(await hasBinary(process.execPath)).toBe(true);
   });
 
+  it("hasBinary reports a tool that runs but exits non-zero as present (the `ffmpeg --version` case)", async () => {
+    // ffmpeg's version flag is `-version`; `ffmpeg --version` exits non-zero yet ffmpeg IS installed.
+    // Presence must be decided by spawnability, not the probe's exit code.
+    expect(await hasBinary(process.execPath, ["-e", "process.exit(8)"])).toBe(true);
+  });
+
   it("CLI args are arrays with the URL un-interpolated (no shell injection)", () => {
     const evil = "https://evil/$(rm -rf ~); echo pwned";
     const args = ytDlpArgs(evil, "/tmp/src.%(ext)s");

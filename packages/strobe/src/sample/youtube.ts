@@ -57,16 +57,26 @@ export function youTubeSamplingEnabled(): boolean {
   return consented;
 }
 
-/** Probe for a CLI by running `<bin> --version`; resolves true iff it runs and exits 0.
+/** Probe for a CLI by trying to run `<bin> --version`. Presence is decided by whether the tool
+ *  **spawns** (a failure to launch — ENOENT — means it isn't on PATH), NOT by the version flag's
+ *  exit code: `ffmpeg --version` exits non-zero (its flag is `-version`) yet ffmpeg is clearly
+ *  installed once it runs. So we resolve false only on the spawn `error`, true once it executes.
  *  (Cross-platform `which` is unreliable; actually running the tool is the honest check.) */
-export function hasBinary(bin: string): Promise<boolean> {
+export function hasBinary(bin: string, probeArgs: string[] = ["--version"]): Promise<boolean> {
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (v: boolean) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
     try {
-      const child = spawn(bin, ["--version"], { stdio: "ignore" });
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
+      const child = spawn(bin, probeArgs, { stdio: "ignore" });
+      child.on("error", () => settle(false)); // ENOENT etc. → not on PATH
+      child.on("close", () => settle(true)); // it executed → installed (any exit code)
     } catch {
-      resolve(false);
+      settle(false);
     }
   });
 }
