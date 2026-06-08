@@ -113,13 +113,11 @@ p4( sample("pad").begin(0.5).grain({ size: 70, density: 24, scatter: 0.2, spread
 `.begin(f)` sets where the cloud hovers; `density`/`size` control its thickness. Over-dense
 requests are capped to a fixed grain pool (a friendly limit, never a glitch).
 
-## YouTube ingest (opt-in)
+## YouTube ingest
 
-> **Legal / ToS / copyright — read first.** Downloading audio from YouTube can conflict with
-> YouTube's Terms of Service and with copyright. This path is **opt-in and never the headline
-> feature**. **Local files (`sample("path.wav")`) and microphone input are the always-safe,
-> recommended ways to sample.** Treat grabbed material as you would in any production — short,
-> transformed, cleared.
+> **Responsible use.** Downloading audio from YouTube can conflict with YouTube's Terms of Service
+> and with copyright — prefer short, transformed grabs, and treat sampled material as you would in
+> any production. Local files (`sample("path.wav")`) and mic input are always-safe alternatives.
 
 `sample.fromYouTube(url, { start, dur })` shells out to **`yt-dlp`** (fetch) and **`ffmpeg`** (trim
 to `dur` seconds from `start`, decode to the engine rate), caches the result on disk by
@@ -127,18 +125,15 @@ to `dur` seconds from `start`, decode to the engine rate), caches the result on 
 `SampleHandle` that flows straight into the whole edit chain.
 
 ```ts
-import { enableYouTubeSampling, sample, p1 } from "strobe";
+import { sample, p1 } from "strobe";
 
-enableYouTubeSampling({ iUnderstandToS: true });   // required once; acknowledges the posture above
 const vox = await sample.fromYouTube("https://youtu.be/…", { start: 42, dur: 4 });
-p1( vox.chop(8).rev().room(0.2) );
+p1( sample(vox).chop(8).rev().room(0.2) );   // fromYouTube returns a handle → wrap in sample()
 ```
 
-- **Opt-in is enforced.** Without `enableYouTubeSampling({ iUnderstandToS: true })`, `fromYouTube`
-  throws and does nothing on the network.
-- **Tools are checked first.** If `yt-dlp`/`ffmpeg` aren't on your `PATH`, you get a clear error
-  with an install hint (`brew install yt-dlp ffmpeg` on macOS) — *before* any fetch — plus a pointer
-  to the no-extra-tools local-file path.
+- **No setup.** `yt-dlp` and `ffmpeg` ship bundled (via `ffmpeg-static` + `youtube-dl-exec`), so a
+  clean `pnpm install` is all you need. A system install on your `PATH` is preferred when present, so
+  you can keep yt-dlp fresh with `yt-dlp -U`.
 - **Short grabs.** `dur` is hard-capped (the posture is a few seconds of a record).
 - **Cached + safe.** A repeat grab is served from disk (no network); URLs are passed as array args
   (never a shell string, so a hostile URL can't inject); temp downloads are always cleaned up; and

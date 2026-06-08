@@ -55,11 +55,11 @@ export { drum } from "./instruments/drums";
 export { loadFile, loadPcm, type SampleHandle } from "./sample/load";
 import { sample as sampleFn } from "./sample/load";
 import "./sample/edit"; // installs .pitch/.stretch/.chop/.slice/.loop/.rev/.grain/.begin/.end
-import { fromYouTube, enableYouTubeSampling, StrobeError, type YouTubeGrabOpts } from "./sample/youtube";
+import { fromYouTube, StrobeError, type YouTubeGrabOpts } from "./sample/youtube";
 
-/** Load a sample: `sample("path/to.wav")` (local, always safe) plus the opt-in
- *  `sample.fromYouTube(url, { start, dur })` (see {@link enableYouTubeSampling}). */
+/** Load a sample: `sample("path/to.wav")` (local) plus `sample.fromYouTube(url, { start, dur })`
+ *  (yt-dlp + ffmpeg ship bundled; grabs are cached on disk). */
 export const sample: typeof sampleFn & { fromYouTube: typeof fromYouTube } = Object.assign(sampleFn, {
   fromYouTube,
 });
-export { fromYouTube, enableYouTubeSampling, StrobeError, type YouTubeGrabOpts };
+export { fromYouTube, StrobeError, type YouTubeGrabOpts };

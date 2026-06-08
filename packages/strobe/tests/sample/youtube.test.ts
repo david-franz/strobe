@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,10 +12,10 @@ import {
   ENGINE_RATE,
 } from "../../src/sample/cache";
 import {
-  fromYouTube,
-  enableYouTubeSampling,
   missingDepsError,
   hasBinary,
+  bundledFfmpeg,
+  bundledYtDlp,
   ytDlpArgs,
   ffmpegArgs,
   MAX_DUR_SEC,
@@ -70,11 +70,14 @@ describe("youtube cache keys", () => {
   });
 });
 
-describe("youtube ingest (opt-in, injection-safe)", () => {
-  beforeEach(() => enableYouTubeSampling({ iUnderstandToS: false })); // reset consent each test
-
-  it("is opt-in: fromYouTube rejects before any network without consent", async () => {
-    await expect(fromYouTube("https://youtu.be/abc", { start: 0, dur: 2 })).rejects.toThrow(/opt-in/);
+describe("youtube ingest (bundled tools, injection-safe)", () => {
+  it("bundles runnable ffmpeg + yt-dlp binaries (installed via deps)", () => {
+    const ff = bundledFfmpeg();
+    const yt = bundledYtDlp();
+    expect(ff, "ffmpeg-static binary present").toBeTruthy();
+    expect(existsSync(ff!)).toBe(true);
+    expect(yt, "youtube-dl-exec binary present").toBeTruthy();
+    expect(existsSync(yt!)).toBe(true);
   });
 
   it("missingDepsError names the tools, an install hint, and the safe alternative", () => {

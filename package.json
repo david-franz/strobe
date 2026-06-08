@@ -29,6 +29,6 @@
     "vitest": "^2.1.8"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild", "ffmpeg-static", "youtube-dl-exec"]
   }
 }
