@@ -1,8 +1,8 @@
 # strobe
 
-**Write techno and hip-hop as code — live, with no compile step.**
+**A live-coding music library: write patterns and effects as TypeScript while a Rust engine renders the audio.**
 
-`strobe` is a programmable music library. You start from a raw frequency or a drum click, sculpt it with every effect a producer expects, pull in short samples (including from YouTube), stretch and chop them, and layer loops by changing patterns and effects *while the sound is playing*. It is aimed at software engineers who want more flexibility and speed than a traditional DAW gives you.
+You build loops from drum sounds, synth notes, and samples, shape them with a per-track effects rack, and edit the code *while it plays* — each change takes effect at the next cycle boundary. The pattern language is TidalCycles'; the synthesis, effects, and sampling run in a Rust audio engine. It's aimed at programmers comfortable in a code editor rather than a DAW.
 
 ```ts
 import { setcps, p1, p2, p3, sound, note, sine } from "strobe";
@@ -21,19 +21,19 @@ Edit any line, save, and the change takes effect at the next cycle boundary — 
 
 ---
 
-## Why strobe
+## Where it fits
 
-This is the *live coding* / algorithmic-music space — the world of [TidalCycles](https://tidalcycles.org/), [Strudel](https://strudel.cc/), [SuperCollider](https://supercollider.github.io/), and [Sonic Pi](https://sonic-pi.net/). `strobe` borrows the proven ideas from that world and packages them for engineers:
+strobe is in the live-coding / algorithmic-music space alongside [TidalCycles](https://tidalcycles.org/), [Strudel](https://strudel.cc/), [SuperCollider](https://supercollider.github.io/), and [Sonic Pi](https://sonic-pi.net/). It reuses TidalCycles' pattern model and pairs it with its own Rust audio engine:
 
-- **A language you already know.** Songs are TypeScript. Interpreted, hot-reloadable, with full editor tooling and type checking.
-- **A pattern model that scales.** Declarative patterns and a concise mini-notation (`"bd ~ sn bd"`), transformed by pure functions (`fast`, `every`, `jux`, `degrade`, …). Borrowed directly from TidalCycles because it is proven.
-- **Sound you own.** A Rust DSP engine does all synthesis and effects on a dedicated real-time thread. No external sound server to install; genuinely good sound quality.
-- **Built for live.** Named tracks (`p1`, `p2`, …) you reassign on the fly. The engine never stops; patterns swap seamlessly.
-- **Sampling, including YouTube.** Grab a few seconds of audio, then chop, stretch, and pitch it — the heart of hip-hop production. (See the [note on YouTube & copyright](docs/roadmap.md#risks).)
+- **Songs are TypeScript** — interpreted, hot-reloaded on save, with normal editor tooling and type-checking.
+- **Patterns are pure functions of time**, written in a concise mini-notation (`"bd ~ sn bd"`) and transformed by combinators (`fast`, `every`, `jux`, `degrade`, …) — the TidalCycles model.
+- **A Rust DSP engine** runs synthesis, the effects rack, and sampling on a dedicated real-time thread; no external sound server.
+- **Named tracks** (`p1`, `p2`, …) reassign live; the engine keeps running, so a swap lands on the next cycle boundary with no dropout.
+- **Sampling** — load local files or short YouTube grabs, then chop / slice / stretch / pitch them. (On YouTube & copyright, see the [note in the roadmap](docs/roadmap.md#risks).)
 
-## How it works (one diagram)
+## How it works
 
-The single most important design decision: **the interpreted control plane is separated from the native audio plane.** Real-time DSP never runs in garbage-collected JavaScript — GC pauses cause audible glitches. Instead, TypeScript schedules *time-stamped events* slightly ahead of time and hands them to the Rust engine over a lock-free queue.
+The core design decision is to **separate the interpreted control plane from the native audio plane.** Real-time DSP never runs in garbage-collected JavaScript — a GC pause would glitch the audio. Instead, TypeScript schedules *time-stamped events* slightly ahead of time and hands them to the Rust engine over a lock-free queue.
 
 ```text
 ┌─────────────────────────── TypeScript (control plane) ───────────────────────────┐
@@ -98,9 +98,9 @@ Early development. Building from a working spine outward:
 - ✅ **Phase 4 — sampling**: load audio (WAV/MP3/FLAC/OGG via **symphonia**, resampled with **rubato**) into a lock-free, RT-safe **sample bank**; a polyphonic **sampler voice** (fractional read + cubic interp, speed/gain/region/loop/reverse); **chop**/**slice**/**reverse**/**loop** as pure pattern transforms over one `TrigSample` opcode; decoupled **time-stretch** & **pitch-shift** (a built-in WSOLA, offline); an engine-side **granular** voice (fixed grain pool, no audio-thread allocation); and **opt-in YouTube ingest** (`yt-dlp`+`ffmpeg`, disk-cached, gated). → [`examples/phase4-sampler.ts`](examples/phase4-sampler.ts) (`pnpm demo:phase4`)
 - ⬜ Phases 5–6: live-coding DX → web backend.
 
-> The README quickstart above now runs **fully** as written (`pnpm demo:phase3`): the filter sweep, `.room`/`.delay` sends, and the `.sidechain("p1")` pump are all audible.
+Phases 0–4 are merged to `main`. The quickstart above runs as written (`pnpm demo:phase3`); sampling is shown in [`examples/phase4-sampler.ts`](examples/phase4-sampler.ts) (`pnpm demo:phase4`).
 
-Engine: 139 Rust tests; library: 140 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
+Engine: 139 Rust tests; library: 142 TS tests; both gated on every commit. See [docs/roadmap.md](docs/roadmap.md) for the full plan.
 
 ## Built on
 
