@@ -19,6 +19,9 @@ swaps land on the cycle boundary, edits stay in time no matter when you hit save
 - **A syntax error keeps the last good version playing** while you fix it — you can't crash
   the sound out from a typo. Fix the error, save, and it picks up again.
 - `solo` is non-destructive (it just hides the rest); `unsolo` brings everyone back.
+- **Live display.** Running a demo in a terminal shows a real-time **oscilloscope** of the master
+  output (a faithful trace of the actual samples) above a stats line (frame / underruns / late /
+  ring). Piping the output (no TTY) falls back to just the stats line.
 
 ## How it fits together
 

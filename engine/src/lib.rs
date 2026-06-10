@@ -14,6 +14,7 @@ pub mod graph;
 pub mod protocol;
 pub mod sample;
 pub mod scheduler;
+pub mod scope;
 pub mod stats;
 #[cfg(test)]
 mod test_util;
@@ -30,6 +31,7 @@ use error::AudioError;
 use graph::InstrumentConfig;
 use protocol::ring::{ring, RingConsumer, RingProducer};
 use sample::{decode, DecodedPcm, SampleBank, SampleBuffer, StretchEngine, Wsola};
+use scope::Scope;
 use stats::{EngineStats, EngineStatsShared};
 use voice_alloc::{InstrumentDef, VoicePool, SLOTS_PER_INSTRUMENT};
 use voices::drum::DrumConfig;
@@ -73,6 +75,8 @@ pub struct Engine {
     /// Shared with the audio thread (feature 02): the control thread inserts decoded buffers,
     /// the audio thread looks them up wait-free.
     sample_bank: Arc<SampleBank>,
+    /// Lock-free tap of recent master output for the terminal waveform display.
+    scope: Arc<Scope>,
 }
 
 impl Default for Engine {
@@ -95,7 +99,14 @@ impl Engine {
             registry: builtin_instruments(),
             cfg: None,
             sample_bank: Arc::new(SampleBank::new()),
+            scope: Arc::new(Scope::new(4096)), // ~85 ms at 48 kHz — plenty for a terminal scope
         }
+    }
+
+    /// The latest `n` master-output samples (mono mix), oldest first — what the terminal waveform
+    /// reads each frame. Cheap, lock-free, and safe to call while audio runs.
+    pub fn scope_samples(&self, n: u32) -> Vec<f32> {
+        self.scope.latest(n as usize)
     }
 
     /// The engine's running sample rate (after `start`); 48 kHz default before then.
@@ -175,6 +186,7 @@ impl Engine {
             bus,
             self.stats.clone(),
             self.sample_bank.clone(),
+            self.scope.clone(),
         );
         let stream = audio_io::build_stream(&device, &config, state)?;
         audio_io::play(&stream)?;

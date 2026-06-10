@@ -12,10 +12,13 @@ import { Scheduler } from "./scheduler";
 import { setActiveClock } from "../clock/singleton";
 import { setActiveSampleEngine } from "../sample/load";
 import { beginReload, endReload, abortReload } from "./tracks";
+import { startScopeDisplay } from "./scope";
 
 export interface PlayOpts {
   sampleRate?: number;
   bufferFrames?: number;
+  /** Disable the terminal oscilloscope even on a TTY (use the plain stats line). */
+  noScope?: boolean;
 }
 
 export interface RunningSong {
@@ -71,18 +74,26 @@ export async function play(songPath: string, opts: PlayOpts = {}): Promise<Runni
     }, 50);
   });
 
-  // Telemetry for the verification recipe.
-  const statsTimer = setInterval(() => {
-    const s = engine.stats();
-    process.stdout.write(
-      `frame=${s.currentFrame} underruns=${s.underruns} late=${s.lateEvents} ring=${s.ringFullness.toFixed(3)}\r`,
-    );
-  }, 500);
+  // Live display. On a TTY, draw a real-time oscilloscope of the master output + a stats line,
+  // redrawn in place. When piped/redirected (no TTY), fall back to the plain one-line telemetry.
+  let stopDisplay: (() => void) | null = null;
+  let statsTimer: ReturnType<typeof setInterval> | null = null;
+  if (process.stdout.isTTY && !opts.noScope) {
+    stopDisplay = startScopeDisplay(engine);
+  } else {
+    statsTimer = setInterval(() => {
+      const s = engine.stats();
+      process.stdout.write(
+        `frame=${s.currentFrame} underruns=${s.underruns} late=${s.lateEvents} ring=${s.ringFullness.toFixed(3)}\r`,
+      );
+    }, 500);
+  }
 
   return {
     stop: async () => {
       if (debounce) clearTimeout(debounce);
-      clearInterval(statsTimer);
+      stopDisplay?.();
+      if (statsTimer) clearInterval(statsTimer);
       watcher.close();
       scheduler.stop();
       setActiveSampleEngine(null);

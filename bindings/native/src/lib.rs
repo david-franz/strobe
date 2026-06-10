@@ -107,6 +107,13 @@ impl Engine {
             ring_fullness: s.ring_fullness,
         }
     }
+
+    /// The latest `n` master-output samples (mono, oldest first) for the terminal waveform.
+    /// Lock-free; safe to poll while audio runs.
+    #[napi]
+    pub fn scope(&self, n: u32) -> Float32Array {
+        Float32Array::new(self.inner.scope_samples(n))
+    }
 }
 
 #[napi(object)]

@@ -16,6 +16,7 @@ use crate::error::AudioError;
 use crate::protocol::ring::RingConsumer;
 use crate::sample::SampleBank;
 use crate::scheduler;
+use crate::scope::Scope;
 use crate::stats::EngineStatsShared;
 use crate::voice_alloc::VoicePool;
 
@@ -85,6 +86,7 @@ pub struct AudioState {
     sends: SendRouter,
     sidechain: SidechainBus,
     sample_bank: Arc<SampleBank>,
+    scope: Arc<Scope>,
     mix_l: Vec<f32>,
     mix_r: Vec<f32>,
 }
@@ -100,6 +102,7 @@ impl AudioState {
         bus: MasterBus,
         stats: Arc<EngineStatsShared>,
         sample_bank: Arc<SampleBank>,
+        scope: Arc<Scope>,
     ) -> Self {
         let n = MAX_TRACKS + 1; // index by track id; 0 = master/global, 1.. = p1..
         Self {
@@ -112,6 +115,7 @@ impl AudioState {
             bus,
             stats,
             sample_bank,
+            scope,
             track_l: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
             track_r: (0..n).map(|_| vec![0.0; MAX_BUFFER]).collect(),
             chains: (0..n).map(|_| fx::build_track_chain(sample_rate)).collect(),
@@ -159,8 +163,8 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
 
     // Disjoint borrows of the rack fields for the rest of the loop.
     let AudioState {
-        frame_clock, consumer, pool, bus, chains, sends, sidechain, sample_bank, stats, track_l,
-        track_r, mix_l, mix_r, sample_rate, cps, ..
+        frame_clock, consumer, pool, bus, chains, sends, sidechain, sample_bank, scope, stats,
+        track_l, track_r, mix_l, mix_r, sample_rate, cps, ..
     } = st;
 
     // Zero per-track buffers + the master mix for this block.
@@ -196,10 +200,12 @@ pub fn render(st: &mut AudioState, data: &mut [f32]) {
     // Master bus + look-ahead limiter: the final stage before the device.
     bus.process(&mut mix_l[..frames], &mut mix_r[..frames]);
 
-    // Interleave to the device: stereo on ch 0/1, mono = (L+R)/2, extra channels silent.
+    // Interleave to the device: stereo on ch 0/1, mono = (L+R)/2, extra channels silent. Tap the
+    // mono mix into the scope ring (lock-free) for the terminal waveform.
     for f in 0..frames {
         let l = mix_l[f];
         let r = mix_r[f];
+        scope.push((l + r) * 0.5);
         let off = f * ch;
         if ch == 1 {
             data[off] = (l + r) * 0.5;
@@ -242,6 +248,7 @@ mod tests {
             MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
             Arc::new(SampleBank::new()),
+            Arc::new(Scope::new(64)),
         );
         (st, producer)
     }
@@ -288,6 +295,7 @@ mod tests {
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
                 Arc::new(SampleBank::new()),
+                Arc::new(Scope::new(64)),
             );
             producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1));
             if with_filter {
@@ -337,6 +345,7 @@ mod tests {
             MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
             bank,
+            Arc::new(Scope::new(64)),
         );
         producer.try_push(trig_sample(1, 200, id, 1.0, 1.0, 0.0)); // land at frame 200
         let mut buf = vec![0.0f32; 1024 * 2];
@@ -364,6 +373,7 @@ mod tests {
             MasterBus::new(48_000.0),
             Arc::new(EngineStatsShared::default()),
             Arc::new(SampleBank::new()),
+            Arc::new(Scope::new(64)),
         );
         producer.try_push(EventRecord::note_on(1, 0, 1, 440.0, 1.0, 0.0, 5.0, 1)); // bright saw, held
         // ParamRamp the track LP cutoff from its 1 kHz default down to 150 Hz over 4000 frames.
@@ -407,6 +417,7 @@ mod tests {
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
                 Arc::new(SampleBank::new()),
+                Arc::new(Scope::new(64)),
             );
             producer.try_push(kick_at(0));
             if with_send {
@@ -452,6 +463,7 @@ mod tests {
                 MasterBus::new(48_000.0),
                 Arc::new(EngineStatsShared::default()),
                 Arc::new(SampleBank::new()),
+                Arc::new(Scope::new(64)),
             );
             producer.try_push(EventRecord::note_on(1, 0, 0, 0.0, 1.0, 0.0, 0.0, 1)); // kick on p1
             producer.try_push(EventRecord::note_on(2, 0, 1, 110.0, 1.0, 0.0, 5.0, 2)); // bass on p2 (held)
@@ -534,6 +546,7 @@ mod tests {
             MasterBus::new(cfg.sample_rate as f32),
             Arc::new(EngineStatsShared::default()),
             Arc::new(SampleBank::new()),
+            Arc::new(Scope::new(64)),
         );
         let stream = build_stream(&device, &config, st).expect("build");
         play(&stream).expect("play");

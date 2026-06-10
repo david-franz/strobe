@@ -23,6 +23,8 @@ export interface Engine {
   /** Hot path; non-blocking; one call per scheduler tick. */
   pushEvents(buffer: ArrayBuffer): void;
   stats(): EngineStats;
+  /** Latest `n` master-output samples (mono, oldest first) — for the terminal waveform. */
+  scope(n: number): Float32Array;
   /** Non-real-time: decode + load a local audio file; returns the sample id + metadata. */
   loadSampleFile(path: string): LoadedSample;
   /** Non-real-time: load already-decoded interleaved PCM; returns the sample id + metadata. */
@@ -47,6 +49,7 @@ export function createNativeEngine(): Engine {
       e.pushEvents(Buffer.from(buf));
     },
     stats: () => e.stats(),
+    scope: (n) => e.scope(n),
     loadSampleFile: (path) => e.loadSampleFile(path),
     loadSamplePcm: (pcm, channels, sampleRate) => e.loadSamplePcm(pcm, channels, sampleRate),
     prepareStretched: (id, stretch, pitch) => e.prepareStretched(id, stretch, pitch),

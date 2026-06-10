@@ -16,6 +16,7 @@ function fakeEngine() {
     stop: async () => {},
     pushEvents: () => {},
     stats: () => ({ currentFrame: 0, underruns: 0, lateEvents: 0, ringFullness: 0 }),
+    scope: () => new Float32Array(0),
     loadSampleFile: (path) => {
       if (path.includes("bad")) throw new Error("couldn't decode: unsupported codec");
       fileCalls++;
